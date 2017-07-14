@@ -37,17 +37,32 @@ public:
     std::vector<Matrix> weights_; // Connection weights
 };
 
-float evaluate(
+Row oneHot(size_t size, size_t i) {
+    Row row(size);
+    row.zeros();
+    row(i) = 1.0f;
+    return row;
+}
+
+struct EvaluationResult {
+    float loss;
+    float correctRatio;
+};
+
+EvaluationResult evaluate(
         const NN& nn,
         const std::vector<Matrix>& inputs,
         const std::vector<int>& labels) {
+    float loss = 0;
     size_t correct = 0;
     for (size_t i = 0; i != inputs.size(); ++i) {
-        if ((int)maxIndex(nn.evaluate(vectorise(inputs[i], 1))) == labels[i]) {
-            ++correct;
-        }
+        const auto a = nn.evaluate(vectorise(inputs[i], 1));
+        loss += norm(a - oneHot(a.size(), labels[i]), 2);
+        correct += (int)maxIndex(a) == labels[i];
     }
-    return (float)correct/inputs.size();
+    return {
+        loss / (2 * inputs.size()),
+        (float)correct / inputs.size()};
 }
 
 class Builder {
@@ -75,7 +90,9 @@ int main()
     Builder builder(28 * 28);
     builder.addFullyConnectedLayer(100);
     auto nn = builder.build();
+    const auto result = evaluate(
+            nn, mnist::readTest(), mnist::readTestLabels());
 
-    std::cout << "Quality on test: " <<
-        evaluate(nn, mnist::readTest(), mnist::readTestLabels()) << '\n';
+    std::cout << "Loss: " << result.loss <<
+            ", correct: " << result.correctRatio << '\n';
 }
