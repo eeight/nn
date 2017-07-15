@@ -6,12 +6,12 @@
 #include "types.h"
 #include "mnist.h"
 
-Col sigmoid(const Col& x) {
+Matrix sigmoid(const Matrix& x) {
     return 1.0f / (1.0f + arma::exp(-x));
 }
 
-Col sigmoidDerivative(const Col& x) {
-    const Col s = sigmoid(x);
+Matrix sigmoidDerivative(const Matrix& x) {
+    const auto& s = sigmoid(x);
     return s % (1.0f - s);
 }
 
@@ -24,7 +24,7 @@ float loss(const Col& out, const Col& target) {
     return dot(diff, diff);
 }
 
-Col lossDerivative(const Col& out, const Col& target) {
+Matrix lossDerivative(const Matrix& out, const Matrix& target) {
     return 2.0f * (out - target);
 }
 
@@ -60,41 +60,43 @@ public:
     Col feedforward(const Col& inputs) const {
         Col state = inputs;
 
-        for (size_t i = 0; i != weights_.size(); ++i) {
+        for (size_t i = 0; i != layers(); ++i) {
             state = sigmoid(weights_[i] * state + bias_[i]);
         }
 
         return state;
     }
 
-    PartialDerivatives backprop(const Col& input, const Col& target) {
-        std::vector<Col> zs;
-        std::vector<Col> activations = {input};
+    PartialDerivatives backprop(
+            const Matrix& batch, const Matrix& batchTargets) {
+        std::vector<Matrix> zs;
+        std::vector<Matrix> activations = {batch};
 
-        Col state = input;
-        for (size_t i = 0; i != weights_.size(); ++i) {
-            state = weights_[i] * state + bias_[i];
+        Matrix state = batch;
+        for (size_t i = 0; i != layers(); ++i) {
+            state = weights_[i] * state + repmat(bias_[i], 1, batch.n_cols);
             zs.push_back(state);
             state = sigmoid(state);
             activations.push_back(state);
         }
         activations.pop_back();
 
-        Col delta = lossDerivative(state, target) %
+        Matrix delta = lossDerivative(state, batchTargets) %
             sigmoidDerivative(zs.back());
         std::vector<Col> nablaBias(bias_.size());
         std::vector<Matrix> nablaWeights(weights_.size());
 
-        nablaBias.back() = delta;
-        nablaWeights.back() = delta * activations.back().t();
+        const float recip = 1.0f / batch.n_cols;
+        nablaBias.back() = sum(delta, 1) * recip;
+        nablaWeights.back() = delta * activations.back().t() * recip;
 
-        for (size_t l = 1; l != bias_.size(); ++l) {
-            const size_t i = bias_.size() - l - 1;
+        for (size_t l = 1; l != layers(); ++l) {
+            const size_t i = layers() - l - 1;
             const auto& z = zs[i];
             const auto sd = sigmoidDerivative(z);
             delta = weights_[i + 1].t() * delta % sd;
-            nablaBias[i] = delta;
-            nablaWeights[i] = delta * activations[i].t();
+            nablaBias[i] = sum(delta, 1) * recip;
+            nablaWeights[i] = delta * activations[i].t() * recip;
         }
 
         return {nablaBias, nablaWeights};
@@ -109,9 +111,20 @@ public:
         std::mt19937 mt;
         for (size_t epoch = 0; epoch != epochs; ++epoch) {
             std::shuffle(train.begin(), train.end(), mt);
-            for (size_t i = 0; i < train.size(); i += miniBatchSize) {
-                const size_t iEnd = std::min(train.size(), i + miniBatchSize);
-                gradientStep(train.begin() + i, train.begin() + iEnd, eta);
+            for (size_t batch = 0; batch < train.size(); batch += miniBatchSize) {
+                const size_t batchEnd = std::min(train.size(), batch + miniBatchSize);
+
+                Matrix batchInput(inputSize(), batchEnd - batch);
+                for (size_t i = batch; i != batchEnd; ++i) {
+                    batchInput.col(i - batch) = train[i].x;
+                }
+
+                Matrix batchTarget(outputSize(), batchEnd - batch);
+                for (size_t i = batch; i != batchEnd; ++i) {
+                    batchTarget.col(i - batch) = oneHot(outputSize(), train[i].y);
+                }
+
+                gradientStep(batchInput, batchTarget, eta);
             }
             const auto correctRatio = evaluate(*this, test).correctRatio;
             std::cout << "Epoch done: " << (epoch + 1) <<
@@ -120,39 +133,23 @@ public:
         }
     }
 
+    size_t inputSize() const {
+        return weights_.front().n_cols;
+    }
+
     size_t outputSize() const {
         return weights_.back().n_rows;
     }
 
+    size_t layers() const { return bias_.size(); }
+
 public:
-    template <class Iterator>
-    void gradientStep(Iterator begin, Iterator end, float eta) {
-        std::vector<Col> nablaBias;
-        nablaBias.reserve(bias_.size());
-        for (const auto& b: bias_) {
-            nablaBias.push_back(arma::zeros<Col>(size(b)));
-        }
+    void gradientStep(const Matrix& batchInput, const Matrix& batchTarget, float eta) {
+        const auto partial = backprop(batchInput, batchTarget);
 
-        std::vector<Matrix> nablaWeights;
-        nablaWeights.reserve(weights_.size());
-        for (const auto& w: weights_) {
-            nablaWeights.push_back(arma::zeros<Matrix>(size(w)));
-        }
-
-        for (auto i = begin; i != end; ++i) {
-            const auto& sample = *i;
-            const auto partial = backprop(
-                    sample.x, oneHot(outputSize(), sample.y));
-            for (size_t j = 0; j != bias_.size(); ++j) {
-                nablaBias[j] += partial.nablaBias[j];
-                nablaWeights[j] += partial.nablaWeights[j];
-            }
-        }
-
-        const float factor = eta / (end - begin);
-        for (size_t j = 0; j != bias_.size(); ++j) {
-            bias_[j] -= nablaBias[j] * factor;
-            weights_[j] -= nablaWeights[j] * factor;
+        for (size_t j = 0; j != layers(); ++j) {
+            bias_[j] -= partial.nablaBias[j] * eta;
+            weights_[j] -= partial.nablaWeights[j] * eta;
         }
     }
 
@@ -207,5 +204,5 @@ int main()
         mnist::readTest(),
         30,
         10,
-        6.0f);
+        1.5f);
 }
