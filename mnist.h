@@ -1,15 +1,12 @@
 #pragma once
 
-#include "types.h"
+#include "train.h"
 
 #include <vector>
 
 namespace mnist {
 
-std::vector<int> readTestLabels();
-std::vector<Matrix> readTest();
-
-std::vector<int> readTrainLabels();
-std::vector<Matrix> readTrain();
+std::vector<Sample> readTest();
+std::vector<Sample> readTrain();
 
 } // namespace mnist

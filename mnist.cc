@@ -35,7 +35,7 @@ std::vector<int> readLabels(const std::string& path) {
     return labels;
 }
 
-std::vector<Matrix> read(const std::string& path) {
+std::vector<Col> read(const std::string& path) {
     std::ifstream in(path);
     if (!in) {
         throw std::runtime_error("Cannot open " + path);
@@ -44,39 +44,44 @@ std::vector<Matrix> read(const std::string& path) {
     if (nextInt(in) != 2051) {
         throw std::runtime_error("Unexpected magic in labels file");
     }
-    std::vector<Matrix> images(nextInt(in));
+    std::vector<Col> images(nextInt(in));
     const size_t rows = nextInt(in);
     const size_t cols = nextInt(in);
     std::vector<unsigned char> bytes(cols * rows);
     for (auto& image: images) {
-        image.set_size(rows, cols);
+        image.set_size(rows * cols);
         in.read(reinterpret_cast<char *>(bytes.data()), bytes.size());
         for (size_t i = 0; i != bytes.size(); ++i) {
-            image(i) = bytes[i];
+            image(i) = bytes[i] / 255.0f;
         }
-        image = image.t();
     }
 
     return images;
 }
 
+std::vector<Sample> zip(std::vector<Col> xs, const std::vector<int>& ys) {
+    std::vector<Sample> result;
+    result.reserve(xs.size());
+
+    for (size_t i = 0; i != xs.size(); ++i) {
+        result.push_back({std::move(xs[i]), ys[i]});
+    }
+
+    return result;
+}
+
 } // namespace
 
-std::vector<int> readTestLabels() {
-    return readLabels("/Users/eeight/git/nn/data/mnist/t10k-labels-idx1-ubyte");
+std::vector<Sample> readTest() {
+    return zip(
+            read("/Users/eeight/git/nn/data/mnist/t10k-images-idx3-ubyte"),
+            readLabels("/Users/eeight/git/nn/data/mnist/t10k-labels-idx1-ubyte"));
 }
 
-std::vector<Matrix> readTest() {
-    return read("/Users/eeight/git/nn/data/mnist/t10k-images-idx3-ubyte");
-
-}
-
-std::vector<int> readTrainLabels() {
-    return readLabels("/Users/eeight/git/nn/data/mnist/train-labels-idx1-ubyte");
-}
-
-std::vector<Matrix> readTrain() {
-    return read("/Users/eeight/git/nn/data/mnist/train-images-idx3-ubyte");
+std::vector<Sample> readTrain() {
+    return zip(
+            read("/Users/eeight/git/nn/data/mnist/train-images-idx3-ubyte"),
+            readLabels("/Users/eeight/git/nn/data/mnist/train-labels-idx1-ubyte"));
 }
 
 } // namespace mnist
