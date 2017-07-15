@@ -52,9 +52,12 @@ std::vector<Col> read(const std::string& path) {
         image.set_size(rows * cols);
         in.read(reinterpret_cast<char *>(bytes.data()), bytes.size());
         for (size_t i = 0; i != bytes.size(); ++i) {
-            image(i) = bytes[i] / 255.0f;
+            image(i) = bytes[i];
         }
+        image /= 255.0;
     }
+
+    in.close();
 
     return images;
 }

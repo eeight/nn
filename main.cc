@@ -3,29 +3,13 @@
 #include <iostream>
 #include <random>
 
-#include "types.h"
+#include "activation.h"
+#include "loss.h"
 #include "mnist.h"
-
-Matrix sigmoid(const Matrix& x) {
-    return 1.0f / (1.0f + arma::exp(-x));
-}
-
-Matrix sigmoidDerivative(const Matrix& x) {
-    const auto& s = sigmoid(x);
-    return s % (1.0f - s);
-}
+#include "types.h"
 
 size_t maxIndex(const Col& row) {
     return std::max_element(row.begin(), row.end()) - row.begin();
-}
-
-float loss(const Col& out, const Col& target) {
-    const Col diff = out - target;
-    return dot(diff, diff) * 0.5f;
-}
-
-Matrix lossDerivative(const Matrix& out, const Matrix& target) {
-    return (out - target);
 }
 
 Col oneHot(size_t size, size_t i) {
@@ -49,7 +33,8 @@ struct EvaluationResult {
 
 EvaluationResult evaluate(
         const NN& nn,
-        const std::vector<Sample>& samples);
+        const std::vector<Sample>& samples,
+        const Loss& loss);
 
 class NN {
 public:
@@ -68,7 +53,9 @@ public:
     }
 
     PartialDerivatives backprop(
-            const Matrix& batch, const Matrix& batchTargets) {
+            const Matrix& batch,
+            const Matrix& batchTargets,
+            const Loss& loss) {
         std::vector<Matrix> zs;
         std::vector<Matrix> activations = {batch};
 
@@ -81,8 +68,7 @@ public:
         }
         activations.pop_back();
 
-        Matrix delta = lossDerivative(state, batchTargets) %
-            sigmoidDerivative(zs.back());
+        Matrix delta = loss.delta(state, batchTargets, zs.back());
         std::vector<Col> nablaBias(bias_.size());
         std::vector<Matrix> nablaWeights(weights_.size());
 
@@ -107,7 +93,8 @@ public:
             const std::vector<Sample>& test,
             size_t epochs,
             size_t miniBatchSize,
-            float eta) {
+            float eta,
+            const Loss& loss) {
         std::mt19937 mt;
         for (size_t epoch = 0; epoch != epochs; ++epoch) {
             std::shuffle(train.begin(), train.end(), mt);
@@ -124,9 +111,9 @@ public:
                     batchTarget.col(i - batch) = oneHot(outputSize(), train[i].y);
                 }
 
-                gradientStep(batchInput, batchTarget, eta);
+                gradientStep(batchInput, batchTarget, eta, loss);
             }
-            const auto correctRatio = evaluate(*this, test).correctRatio;
+            const auto correctRatio = evaluate(*this, test, loss).correctRatio;
             std::cout << "Epoch done: " << (epoch + 1) <<
                     ", correct: " << correctRatio <<
                     ", n = " << test.size() << '\n';
@@ -144,8 +131,12 @@ public:
     size_t layers() const { return bias_.size(); }
 
 public:
-    void gradientStep(const Matrix& batchInput, const Matrix& batchTarget, float eta) {
-        const auto partial = backprop(batchInput, batchTarget);
+    void gradientStep(
+            const Matrix& batchInput,
+            const Matrix& batchTarget,
+            float eta,
+            const Loss& loss) {
+        const auto partial = backprop(batchInput, batchTarget, loss);
 
         for (size_t j = 0; j != layers(); ++j) {
             bias_[j] -= partial.nablaBias[j] * eta;
@@ -159,17 +150,17 @@ public:
 
 EvaluationResult evaluate(
         const NN& nn,
-        const std::vector<Sample>& samples) {
-    float loss = 0;
+        const std::vector<Sample>& samples,
+        const Loss& loss) {
+    float lossValue = 0;
     size_t correct = 0;
     for (const auto& sample: samples) {
         const auto a = nn.feedforward(sample.x);
-        const Col diff = a - oneHot(a.size(), sample.y);
-        loss += dot(diff, diff);
+        lossValue += loss.loss(a, oneHot(a.size(), sample.y));
         correct += (int)maxIndex(a) == sample.y;
     }
     return {
-        loss / (2 * samples.size()),
+        lossValue / (2 * samples.size()),
         (float)correct / samples.size()};
 }
 
@@ -199,10 +190,12 @@ int main()
     builder.addFullyConnectedLayer(30);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();
+    auto loss = crossEntropyLoss();
     nn.sgd(
         mnist::readTrain(),
         mnist::readTest(),
         30,
         10,
-        3.0f);
+        0.5f,
+        *loss);
 }
