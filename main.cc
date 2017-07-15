@@ -94,7 +94,8 @@ public:
             size_t epochs,
             size_t miniBatchSize,
             float eta,
-            const Loss& loss) {
+            const Loss& loss,
+            float lambda) {
         std::mt19937 mt;
         for (size_t epoch = 0; epoch != epochs; ++epoch) {
             std::shuffle(train.begin(), train.end(), mt);
@@ -111,7 +112,7 @@ public:
                     batchTarget.col(i - batch) = oneHot(outputSize(), train[i].y);
                 }
 
-                gradientStep(batchInput, batchTarget, eta, loss);
+                gradientStep(batchInput, batchTarget, eta, loss, lambda, train.size());
             }
             const auto correctRatio = evaluate(*this, test, loss).correctRatio;
             std::cout << "Epoch done: " << (epoch + 1) <<
@@ -135,12 +136,15 @@ public:
             const Matrix& batchInput,
             const Matrix& batchTarget,
             float eta,
-            const Loss& loss) {
+            const Loss& loss,
+            float lambda,
+            size_t n) {
         const auto partial = backprop(batchInput, batchTarget, loss);
 
         for (size_t j = 0; j != layers(); ++j) {
             bias_[j] -= partial.nablaBias[j] * eta;
-            weights_[j] -= partial.nablaWeights[j] * eta;
+            weights_[j] = weights_[j] * (1.0f - eta * lambda / n) -
+                partial.nablaWeights[j] * eta;
         }
     }
 
@@ -171,7 +175,9 @@ public:
 
     void addFullyConnectedLayer(size_t size) {
         bias_.push_back(arma::randn<Col>(size));
-        weights_.push_back(arma::randn<Matrix>(size, lastLayerSize_));
+        weights_.push_back(
+                arma::randn<Matrix>(size, lastLayerSize_) /
+                std::sqrt(static_cast<float>(lastLayerSize_)));
         lastLayerSize_ = size;
     }
 
@@ -187,7 +193,7 @@ public:
 int main()
 {
     Builder builder(28 * 28);
-    builder.addFullyConnectedLayer(30);
+    builder.addFullyConnectedLayer(100);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();
     auto loss = crossEntropyLoss();
@@ -197,5 +203,6 @@ int main()
         30,
         10,
         0.5f,
-        *loss);
+        *loss,
+        5.0);
 }
