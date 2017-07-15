@@ -21,11 +21,11 @@ size_t maxIndex(const Col& row) {
 
 float loss(const Col& out, const Col& target) {
     const Col diff = out - target;
-    return dot(diff, diff);
+    return dot(diff, diff) * 0.5f;
 }
 
 Matrix lossDerivative(const Matrix& out, const Matrix& target) {
-    return 2.0f * (out - target);
+    return (out - target);
 }
 
 Col oneHot(size_t size, size_t i) {
@@ -204,5 +204,5 @@ int main()
         mnist::readTest(),
         30,
         10,
-        1.5f);
+        3.0f);
 }
