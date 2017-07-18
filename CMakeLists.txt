@@ -12,7 +12,8 @@ set(CMAKE_CXX_STANDARD 14)
 
 add_library(
     tensor
-    tensor.cc)
+    tensor.cc
+    ad.cc)
 
 add_library(
     nn

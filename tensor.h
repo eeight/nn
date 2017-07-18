@@ -1,13 +1,11 @@
 #pragma once
 
 #include "types.h"
+#include "expr.h"
 
 #include <memory>
 
 namespace t {
-
-class Tensor;
-class Expr;
 
 class Tensor {
 public:
@@ -15,7 +13,7 @@ public:
     explicit Tensor(std::shared_ptr<Expr>);
     ~Tensor();
 
-    Matrix eval() const;
+    Matrix eval(Ad *ad = nullptr) const;
     size_t rows() const;
     size_t cols() const;
 

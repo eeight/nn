@@ -1,4 +1,5 @@
 #include "tensor.h"
+#include "ad.h"
 
 #include <experimental/optional>
 #include <stdexcept>
@@ -7,58 +8,6 @@
 #include <functional>
 
 namespace t {
-
-namespace {
-
-struct Shape {
-    explicit Shape(const Matrix& matrix) :
-        rows(matrix.n_rows), cols(matrix.n_cols)
-    {}
-
-    Shape(size_t rows, size_t cols) :
-        rows(rows), cols(cols)
-    {}
-
-    bool operator ==(Shape other) const {
-        return rows == other.rows && cols == other.cols;
-    }
-
-    bool operator !=(Shape other) const {
-        return !(*this == other);
-    }
-
-    Shape operator *(Shape other) const {
-        if (cols != other.rows) {
-            throw std::runtime_error(
-                    "Incompatible shapes for matrix multiplication");
-        }
-
-        return {rows, other.cols};
-    }
-
-    size_t rows;
-    size_t cols;
-};
-
-} // namespace
-
-class Expr {
-public:
-    explicit Expr(Shape shape) :
-        shape_(shape)
-    {}
-
-    virtual ~Expr() = default;
-    virtual Matrix eval() const = 0;
-    Shape shape() const { return shape_; }
-
-private:
-    Shape shape_;
-};
-
-const std::shared_ptr<Expr>& unwrap(const Tensor& tensor) {
-    return tensor.expr_;
-}
 
 namespace {
 
@@ -76,8 +25,13 @@ public:
         value_(std::move(value))
     {}
 
-    Matrix eval() const override {
+    Matrix eval(Ad *) const override {
         return value_;
+    }
+
+    Matrix partial(
+            const Expr*, const ValueGetter&, const Matrix&) const override {
+        throw std::logic_error("Const::partial is not defined");
     }
 
 private:
@@ -91,60 +45,207 @@ public:
         id_(id)
     {}
 
-    Matrix eval() const override {
+    Matrix eval(Ad *ad) const override {
         const auto& var = variables().at(id_);
         if (!var) {
             throw std::runtime_error(
                     "Cannot read from uninitialized variable with id " +
                     std::to_string(id_));
         }
+        if (ad) {
+            ad->trace(this, {}, *var);
+        }
         return *var;
     }
+
+    Matrix partial(
+            const Expr*, const ValueGetter&, const Matrix&) const override {
+        throw std::logic_error("Var::partial is not defined");
+    }
+
+    size_t id() const { return id_; }
 
 private:
     size_t id_;
 };
 
-using BinaryMatrixOp = std::function<Matrix (const Matrix&, const Matrix&)>;
+struct OperatorPlus {
+    const char *name() const {
+        return "operator +";
+    }
 
+    Matrix eval(const Matrix& x, const Matrix& y) const {
+        return x + y;
+    }
+
+    Matrix partial(
+            const Expr*,
+            const Expr*,
+            const Expr*,
+            const Expr::ValueGetter&,
+            const Matrix& selfPartial) const {
+        return selfPartial;
+    }
+};
+
+struct OperatorMinus {
+    const char *name() const {
+        return "operator -";
+    }
+
+    Matrix eval(const Matrix& x, const Matrix& y) const {
+        return x - y;
+    }
+
+    Matrix partial(
+            const Expr* x,
+            const Expr*,
+            const Expr* p,
+            const Expr::ValueGetter&,
+            const Matrix& selfPartial) const {
+        if (p == x) {
+            return selfPartial;
+        } else {
+            return -selfPartial;
+        }
+    }
+};
+
+struct OperatorHadamardProduct {
+    const char *name() const {
+        return "operator %";
+    }
+
+    Matrix eval(const Matrix& x, const Matrix& y) const {
+        return x % y;
+    }
+
+    Matrix partial(
+            const Expr* x,
+            const Expr* y,
+            const Expr* p,
+            const Expr::ValueGetter& value,
+            const Matrix& selfPartial) const {
+        if (p == x) {
+            return value(y) % selfPartial;
+        } else {
+            return value(x) % selfPartial;
+        }
+    }
+};
+
+struct OperatorMul {
+    const char *name() const {
+        return "operator *";
+    }
+
+    Matrix eval(const Matrix& x, const Matrix& y) const {
+        return x * y;
+    }
+
+    Matrix partial(
+            const Expr* x,
+            const Expr* y,
+            const Expr* p,
+            const Expr::ValueGetter& value,
+            const Matrix& selfPartial) const {
+        if (p == x) {
+            return selfPartial * value(y).t();
+        } else {
+            return value(x).t() * selfPartial;
+        }
+    }
+};
+
+template <class Operator>
 class BinaryOp : public Expr {
 public:
     BinaryOp(
             Shape shape,
-            BinaryMatrixOp op,
             std::shared_ptr<Expr> x,
             std::shared_ptr<Expr> y) :
         Expr(shape),
-        op_(std::move(op)),
         x_(std::move(x)),
         y_(std::move(y))
     {}
 
-    Matrix eval() const override {
-        return op_(x_->eval(), y_->eval());
+    Matrix eval(Ad* ad) const override {
+        Matrix result = Operator().eval(x_->eval(ad), y_->eval(ad));
+        if (ad) {
+            ad->trace(this, {x_.get(), y_.get()}, result);
+        }
+        return result;
+    }
+
+    Matrix partial(
+            const Expr* expr,
+            const ValueGetter& value,
+            const Matrix& selfPartial) const override {
+        if (expr != x_.get() && expr != y_.get()) {
+            throw std::logic_error("Unexpected expr in BinaryOp::partial");
+        }
+        return Operator().partial(
+                x_.get(),
+                y_.get(),
+                expr,
+                value,
+                selfPartial);
     }
 
 private:
-    BinaryMatrixOp op_;
     std::shared_ptr<Expr> x_;
     std::shared_ptr<Expr> y_;
 };
 
-Tensor binaryOpWithMatchingShapes(
-        const Tensor& x,
-        const Tensor& y,
-        BinaryMatrixOp op,
-        const char* name) {
+class Pow : public Expr {
+public:
+    Pow(std::shared_ptr<Expr> x, float y) :
+        Expr({1, 1}),
+        x_(std::move(x)),
+        y_(y)
+    {}
+
+    Matrix eval(Ad *ad) const override {
+        Matrix result(1, 1);
+        result.fill(std::pow(x_->eval(ad)(0, 0), y_));
+        if (ad) {
+            ad->trace(this, {x_.get()}, result);
+        }
+        return result;
+    }
+
+    Matrix partial(
+            const Expr* expr,
+            const ValueGetter& value,
+            const Matrix& selfPartial) const override {
+        if (expr != x_.get()) {
+            throw std::logic_error("Unexpected expr in Pow::partial");
+        }
+        return selfPartial * (y_ * std::pow(value(x_.get())(0, 0), y_ - 1));
+    }
+
+private:
+    std::shared_ptr<Expr> x_;
+    float y_;
+};
+
+template <class Operator>
+Tensor binaryOpWithMatchingShapes(const Tensor& x, const Tensor& y) {
     const auto& xExpr = unwrap(x);
     const auto& yExpr = unwrap(y);
     if (xExpr->shape() != yExpr->shape()) {
-        throw std::runtime_error(std::string("Incompatible shapes in ") + name);
+        throw std::runtime_error(
+                std::string("Incompatible shapes in ") + Operator().name());
     }
-    return Tensor(std::make_shared<BinaryOp>(
-            xExpr->shape(), std::move(op), xExpr, yExpr));
+    return Tensor(std::make_shared<BinaryOp<Operator>>(
+            xExpr->shape(), xExpr, yExpr));
 }
 
 } // namespace
+
+const std::shared_ptr<Expr>& unwrap(const Tensor& tensor) {
+    return tensor.expr_;
+}
 
 Tensor::Tensor(std::shared_ptr<Expr> expr) :
     expr_(std::move(expr))
@@ -152,8 +253,8 @@ Tensor::Tensor(std::shared_ptr<Expr> expr) :
 
 Tensor::~Tensor() = default;
 
-Matrix Tensor::eval() const {
-    return expr_->eval();
+Matrix Tensor::eval(Ad *ad) const {
+    return expr_->eval(ad);
 }
 
 size_t Tensor::rows() const {
@@ -162,6 +263,24 @@ size_t Tensor::rows() const {
 
 size_t Tensor::cols() const {
     return expr_->shape().cols;
+}
+
+Tensor& Tensor::operator +=(const Matrix& matrix) {
+    auto varExpr = std::dynamic_pointer_cast<Var>(expr_);
+    if (!varExpr) {
+        throw std::runtime_error(
+                "operator += can be applied only to variables");
+    }
+
+    auto& var = variables().at(varExpr->id());
+    if (!var) {
+        throw std::runtime_error(
+                "Cannot apply operator += to uninitialized variable");
+    }
+
+    *var += matrix;
+
+    return *this;
 }
 
 Tensor newConstTensor(Matrix init) {
@@ -176,45 +295,40 @@ Tensor newTensor(Matrix init) {
 }
 
 Tensor operator +(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes(
-            x,
-            y,
-            [](const Matrix& x, const Matrix& y) {
-                return x + y;
-            },
-            "operator +");
+    return binaryOpWithMatchingShapes<OperatorPlus>(x, y);
 }
 
 Tensor operator -(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes(
-            x,
-            y,
-            [](const Matrix& x, const Matrix& y) {
-                return x - y;
-            },
-            "operator -");
+    return binaryOpWithMatchingShapes<OperatorMinus>(x, y);
 }
 
 Tensor operator %(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes(
-            x,
-            y,
-            [](const Matrix& x, const Matrix& y) {
-                return x % y;
-            },
-            "operator %");
+    return binaryOpWithMatchingShapes<OperatorHadamardProduct>(x, y);
 }
 
 Tensor operator *(const Tensor& x, const Tensor& y) {
     const auto& xExpr = unwrap(x);
     const auto& yExpr = unwrap(y);
-    return Tensor(std::make_shared<BinaryOp>(
-            xExpr->shape() * yExpr->shape(),
-            [](const Matrix& x, const Matrix& y) {
-                return x * y;
-            },
-            xExpr,
-            yExpr));
+    return Tensor(std::make_shared<BinaryOp<OperatorMul>>(
+            xExpr->shape() * yExpr->shape(), xExpr, yExpr));
+}
+
+Tensor pow(const Tensor& x, float y) {
+    if (y < 0) {
+        throw std::runtime_error("Second argument to pow cannot be negative");
+    }
+    const auto& xExpr = unwrap(x);
+    if (xExpr->shape() != Shape{1, 1}) {
+        throw std::runtime_error(
+                "pow can be applied only to tensors with shape(1, 1)");
+    }
+    return Tensor(std::make_shared<Pow>(xExpr, y));
+}
+
+std::vector<Matrix> diff(const Tensor& expr, const std::vector<Tensor>& vars) {
+    Ad ad;
+    expr.eval(&ad);
+    return ad.partial(vars);
 }
 
 } // namespace t

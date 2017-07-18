@@ -27,7 +27,6 @@ BOOST_AUTO_TEST_CASE(loss_value) {
 
 }
 
-#if 0
 BOOST_AUTO_TEST_CASE(decreasing_loss) {
     auto x = t::newTensor(arma::ones<Matrix>(1, 1));
     auto y = t::newTensor(arma::zeros<Matrix>(1, 1));
@@ -49,9 +48,11 @@ BOOST_AUTO_TEST_CASE(decreasing_loss) {
             params[j] += -eta * partial[j];
         }
 
+        std::cerr << "w = " << w.eval()(0, 0) << '\n';
+        std::cerr << "b = " << b.eval()(0, 0) << '\n';
+
         const float nextLossValue = loss.eval()(0, 0);
         BOOST_TEST(nextLossValue < lossValue);
         lossValue = nextLossValue;
     }
 }
-#endif
