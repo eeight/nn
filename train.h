@@ -4,5 +4,5 @@
 
 struct Sample {
     Col x;
-    int y;
+    Col y;
 };
