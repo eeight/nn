@@ -12,7 +12,7 @@ public:
             const std::initializer_list<Expr* >& deps,
             const Matrix& value);
 
-    std::vector<Matrix> partial(const std::vector<t::Tensor>& vars) const;
+    std::vector<Matrix> partial(const std::vector<Tensor>& vars) const;
 
 private:
     // List of sub-expression computed during the evaluation

@@ -62,12 +62,19 @@ std::vector<Col> read(const std::string& path) {
     return images;
 }
 
+Col oneHot(size_t size, size_t i) {
+    Col row(size);
+    row.zeros();
+    row(i) = 1.0f;
+    return row;
+}
+
 std::vector<Sample> zip(std::vector<Col> xs, const std::vector<int>& ys) {
     std::vector<Sample> result;
     result.reserve(xs.size());
 
     for (size_t i = 0; i != xs.size(); ++i) {
-        result.push_back({std::move(xs[i]), ys[i]});
+        result.push_back({std::move(xs[i]), oneHot(10, ys[i])});
     }
 
     return result;

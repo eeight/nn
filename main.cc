@@ -9,13 +9,6 @@
 #include "types.h"
 #include "nn.h"
 
-Col oneHot(size_t size, size_t i) {
-    Col row(size);
-    row.zeros();
-    row(i) = 1.0f;
-    return row;
-}
-
 class Builder {
 public:
     explicit Builder(size_t inputSize, size_t miniBatchSize) :

@@ -74,8 +74,9 @@ void NN::gradientStep(
         const Loss& loss,
         float lambda,
         size_t n) {
-    std::vector<Matrix> partial = lossValue.diff(
-            weights_,
+    std::vector<Matrix> partial = diff(
+            lossValue,
+            weights_ and biases_,
             {
                 {self.input, std::cref(batchInput)},
                 {self.target, std::cref(batchTarget)}

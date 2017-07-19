@@ -2,21 +2,22 @@
 #define BOOST_TEST_DYN_LINK
 
 #include "tensor.h"
+#include "loss.h"
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(const_tensor_test) {
     const Matrix m = arma::randu<Matrix>(10, 10);
-    const auto t = t::newConstTensor(m);
+    const auto t = newConstTensor(m);
     BOOST_REQUIRE(arma::approx_equal(m, t.eval(), "absdiff", 1e-6));
 }
 
 BOOST_AUTO_TEST_CASE(loss_value) {
-    auto x = t::newTensor(arma::ones<Matrix>(1, 1));
-    auto y = t::newTensor(arma::zeros<Matrix>(1, 1));
-    auto w = t::newTensor(arma::ones<Matrix>(1, 1));
-    auto b = t::newTensor(arma::zeros<Matrix>(1, 1));
-    std::vector<t::Tensor> params = {w, b};
+    auto x = newTensor(arma::ones<Matrix>(1, 1));
+    auto y = newTensor(arma::zeros<Matrix>(1, 1));
+    auto w = newTensor(arma::ones<Matrix>(1, 1));
+    auto b = newTensor(arma::zeros<Matrix>(1, 1));
+    std::vector<Tensor> params = {w, b};
 
     auto tmp = x * w + b - y;
     auto loss = tmp % tmp + w % w;
@@ -27,13 +28,13 @@ BOOST_AUTO_TEST_CASE(loss_value) {
 }
 
 BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
-    auto x = t::newTensor(arma::ones<Matrix>(1, 1));
-    auto y = t::newTensor(arma::zeros<Matrix>(1, 1));
-    auto w = t::newTensor(arma::ones<Matrix>(1, 1));
-    auto b = t::newTensor(arma::zeros<Matrix>(1, 1));
-    std::vector<t::Tensor> params = {w, b};
+    auto x = newTensor(arma::ones<Matrix>(1, 1));
+    auto y = newTensor(arma::zeros<Matrix>(1, 1));
+    auto w = newTensor(arma::ones<Matrix>(1, 1));
+    auto b = newTensor(arma::zeros<Matrix>(1, 1));
+    std::vector<Tensor> params = {w, b};
 
-    auto loss = t::pow(x * w + b - y, 2) + t::pow(w, 2);
+    auto loss = pow(x * w + b - y, 2) + pow(w, 2);
 
     BOOST_TEST(loss.shape().isScalar());
 
@@ -41,7 +42,7 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
 
     float lossValue = loss.eval()(0, 0);
     for (size_t i = 0; i != 100; ++i) {
-        auto partial = t::diff(loss, params);
+        auto partial = diff(loss, params);
         for (size_t j = 0; j != params.size(); ++j) {
             params[j] += -eta * partial[j];
         }
@@ -52,17 +53,18 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
     }
 }
 
-t::Tensor sumSquares(const t::Tensor& tensor) {
-    size_t size = tensor.shape().size();
-    return tensor.reshape({1, size}) * tensor.reshape({size, 1});
-}
-
 BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
-    auto x = t::newTensor(Col{{0, 1}});
-    auto y = t::newTensor(Col{{1, 0}});
-    auto w = t::newTensor(arma::ones<Matrix>(2, 2));
-    auto b = t::newTensor(arma::zeros<Matrix>(2, 1));
-    std::vector<t::Tensor> params = {w, b};
+    auto x = newTensor(2, 1);
+    auto y = newTensor(2, 1);
+    auto w = newTensor(arma::ones<Matrix>(2, 2));
+    auto b = newTensor(arma::zeros<Matrix>(2, 1));
+    std::vector<Tensor> params = {w, b};
+
+    const Col xValue{{0, 1}};
+    const Col yValue{{1, 0}};
+
+    x = xValue;
+    y = yValue;
 
     auto loss = sumSquares(w * x + b - y) + sumSquares(w);
 
@@ -72,7 +74,7 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
 
     float lossValue = loss.eval()(0, 0);
     for (size_t i = 0; i != 100; ++i) {
-        auto partial = t::diff(loss, params);
+        auto partial = diff(loss, params);
         for (size_t j = 0; j != params.size(); ++j) {
             params[j] += -eta * partial[j];
         }

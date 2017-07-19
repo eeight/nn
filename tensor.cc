@@ -7,8 +7,6 @@
 #include <vector>
 #include <functional>
 
-namespace t {
-
 namespace {
 
 using Variables = std::vector<std::experimental::optional<Matrix>>;
@@ -272,6 +270,15 @@ Tensor binaryOpWithMatchingShapes(const Tensor& x, const Tensor& y) {
             xExpr->shape(), xExpr, yExpr));
 }
 
+std::experimental::optional<Matrix>& extractVar(const Tensor& tensor) {
+    auto varExpr = std::dynamic_pointer_cast<Var>(unwrap(tensor));
+    if (!varExpr) {
+        throw std::runtime_error("Expected a variable");
+    }
+
+    return variables().at(varExpr->id());
+}
+
 } // namespace
 
 const std::shared_ptr<Expr>& unwrap(const Tensor& tensor) {
@@ -293,13 +300,7 @@ Shape Tensor::shape() const {
 }
 
 Tensor& Tensor::operator +=(const Matrix& matrix) {
-    auto varExpr = std::dynamic_pointer_cast<Var>(expr_);
-    if (!varExpr) {
-        throw std::runtime_error(
-                "operator += can be applied only to variables");
-    }
-
-    auto& var = variables().at(varExpr->id());
+    auto& var = extractVar(*this);
     if (!var) {
         throw std::runtime_error(
                 "Cannot apply operator += to uninitialized variable");
@@ -308,6 +309,15 @@ Tensor& Tensor::operator +=(const Matrix& matrix) {
     *var += matrix;
 
     return *this;
+}
+
+Tensor& Tensor::operator =(const Matrix& matrix) {
+    extractVar(*this) = matrix;
+    return *this;
+}
+
+void Tensor::reset() {
+    extractVar(*this) = {};
 }
 
 Tensor Tensor::reshape(Shape newShape) const {
@@ -320,6 +330,12 @@ Tensor Tensor::reshape(Shape newShape) const {
 
 Tensor newConstTensor(Matrix init) {
     return Tensor(std::make_shared<Const>(std::move(init)));
+}
+
+Tensor newTensor(size_t rows, size_t cols) {
+    const size_t id = variables().size();
+    variables().emplace_back();
+    return Tensor(std::make_shared<Var>(Shape{rows, cols}, id));
 }
 
 Tensor newTensor(Matrix init) {
@@ -366,4 +382,13 @@ std::vector<Matrix> diff(const Tensor& expr, const std::vector<Tensor>& vars) {
     return ad.partial(vars);
 }
 
-} // namespace t
+Tensor sumSquares(const Tensor& tensor) {
+    size_t size = tensor.shape().size();
+    return tensor.reshape({1, size}) * tensor.reshape({size, 1});
+}
+
+Tensor sum(const Tensor& tensor) {
+    size_t size = tensor.shape().size();
+    return tensor.reshape({1, size}) *
+        newConstTensor(arma::ones<Matrix>(size, 1));
+}

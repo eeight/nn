@@ -20,7 +20,7 @@ void Ad::trace(
     }
 }
 
-std::vector<Matrix> Ad::partial(const std::vector<t::Tensor>& vars) const {
+std::vector<Matrix> Ad::partial(const std::vector<Tensor>& vars) const {
     std::vector<Matrix> result(vars.size());
     std::vector<Matrix> partials(expressions_.size());
 

@@ -5,8 +5,6 @@
 
 #include <memory>
 
-namespace t {
-
 class Tensor {
 public:
     Tensor() = delete;
@@ -18,6 +16,9 @@ public:
 
     Tensor& operator +=(const Matrix& matrix);
     Tensor reshape(Shape shape) const;
+
+    Tensor& operator=(const Matrix& matrix);
+    void reset();
 
     friend const std::shared_ptr<Expr>& unwrap(const Tensor&);
 
@@ -42,4 +43,7 @@ Tensor pow(const Tensor&x, float y);
 // Compute partial derivatives of expr by each of the vars.
 std::vector<Matrix> diff(const Tensor& expr, const std::vector<Tensor>& vars);
 
-} // namspace t
+// Sums squares of all the elements in the tensor, returns scalar.
+Tensor sumSquares(const Tensor& tensor);
+// Sums all the elements in the tensor, returns scalar.
+Tensor sum(const Tensor& tensor);
