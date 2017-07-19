@@ -72,6 +72,57 @@ private:
     size_t id_;
 };
 
+class Tiled : public Expr {
+public:
+    Tiled(std::shared_ptr<Expr> x, size_t repeatRows, size_t repeatCols) :
+        Expr(Shape{
+                x->shape().rows * repeatRows,
+                x->shape().cols * repeatCols}),
+        x_(std::move(x)),
+        repeatRows_(repeatRows),
+        repeatCols_(repeatCols),
+        originalShape_(x_->shape())
+    {}
+
+    Matrix eval(Ad* ad) const override {
+        Matrix result = repmat(x_->eval(ad), repeatRows_, repeatCols_);
+        if (ad) {
+            ad->trace(this, {x_.get()}, result);
+        }
+        return result;
+    }
+
+    Matrix partial(
+            const Expr* expr,
+            const ValueGetter&,
+            const Matrix& selfPartial) const override {
+        if (expr != x_.get()) {
+            throw std::logic_error("Unexpected expr in Tiled::partial");
+        }
+
+        Matrix result(originalShape_.rows, originalShape_.cols);
+        for (size_t i = 0; i != repeatRows_; ++i) {
+            const size_t beginRow = i * originalShape_.rows;
+            for (size_t j = 0; j != repeatCols_; ++j) {
+                const size_t beginCol = j * originalShape_.cols;
+                result += selfPartial.submat(
+                        beginRow,
+                        beginCol,
+                        // Subtract one because the ranges are inclusive here.
+                        beginRow + originalShape_.rows - 1,
+                        beginCol + originalShape_.cols - 1);
+            }
+        }
+        return result;
+    }
+
+private:
+    std::shared_ptr<Expr> x_;
+    size_t repeatRows_;
+    size_t repeatCols_;
+    Shape originalShape_;
+};
+
 struct OperatorPlus {
     const char *name() const {
         return "operator +";
@@ -374,17 +425,22 @@ private:
     std::shared_ptr<Expr> x_;
 };
 
-std::shared_ptr<Const> maybeTile(const Expr* x, Shape shape) {
-    if (x->shape() != Shape{1, 1}) {
+std::shared_ptr<Tiled> maybeTile(
+        const std::shared_ptr<Expr>& x, Shape shape, bool onlyScalar = false) {
+    const auto xShape = x->shape();
+    if (onlyScalar && xShape != Shape{1, 1}) {
         return {};
     }
-    if (auto c = dynamic_cast<const Const *>(x)) {
-        Matrix matrix(shape.rows, shape.cols);
-        matrix.fill(c->value()(0, 0));
-        return std::make_shared<Const>(matrix);
-    } else {
+    if (shape.rows % xShape.rows || shape.cols % xShape.cols) {
         return {};
     }
+    return std::make_shared<Tiled>(
+            x, shape.rows / xShape.rows, shape.cols / xShape.cols);
+}
+
+std::shared_ptr<Tiled> maybeTileScalar(
+        const std::shared_ptr<Expr>& x, Shape shape) {
+    return maybeTile(x, shape, /* onlyScalar = */ true);
 }
 
 template <class Operator>
@@ -392,9 +448,9 @@ Tensor binaryOpWithMatchingShapes(const Tensor& x, const Tensor& y) {
     auto xExpr = unwrap(x);
     auto yExpr = unwrap(y);
     if (xExpr->shape() != yExpr->shape()) {
-        if (auto tiled = maybeTile(xExpr.get(), yExpr->shape())) {
+        if (auto tiled = maybeTile(xExpr, yExpr->shape())) {
             xExpr = std::move(tiled);
-        } else if (auto tiled = maybeTile(yExpr.get(), xExpr->shape())) {
+        } else if (auto tiled = maybeTile(yExpr, xExpr->shape())) {
             yExpr = std::move(tiled);
         } else {
             throw std::runtime_error(
@@ -521,12 +577,12 @@ Tensor operator *(const Tensor& x, const Tensor& y) {
     const auto& xExpr = unwrap(x);
     const auto& yExpr = unwrap(y);
     if (xExpr->shape().cols != yExpr->shape().rows) {
-        if (auto tiled = maybeTile(xExpr.get(), yExpr->shape())) {
+        if (auto tiled = maybeTileScalar(xExpr, yExpr->shape())) {
             return Tensor(std::make_shared<BinaryOp<OperatorHadamardProduct>>(
                         yExpr->shape(),
                         tiled,
                         yExpr));
-        } else if (auto tiled = maybeTile(yExpr.get(), xExpr->shape())) {
+        } else if (auto tiled = maybeTileScalar(yExpr, xExpr->shape())) {
             return Tensor(std::make_shared<BinaryOp<OperatorHadamardProduct>>(
                         xExpr->shape(),
                         xExpr,
