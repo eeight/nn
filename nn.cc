@@ -40,8 +40,8 @@ float evaluate(
             for (size_t i = 0; i != batchTarget.n_cols; ++i) {
                 correct +=
                     maxIndex(output.col(i)) == maxIndex(batchTarget.col(i));
+                ++total;
             }
-            total += nn.miniBatchSize();
         });
     return (float)correct / total;
 }
@@ -73,14 +73,19 @@ void NN::fit(
         size_t epochs,
         float eta,
         LossFunction lossFunction,
-        float lambda) {
+        float /*lambda*/) {
     auto target = newTensor(output_.shape());
+#if 0
     Tensor regularizer = newTensor(arma::zeros<Matrix>(1, 1));
     for (const auto& w: weights_) {
         regularizer = regularizer + sumSquares(w);
     }
-    Tensor loss = lossFunction(output_, target) +
+#endif
+    Tensor loss = lossFunction(output_, target);
+#if 0
+        +
         lambda / (2 * train.size()) * regularizer;
+#endif
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
         std::shuffle(train.begin(), train.end(), mt);
@@ -105,4 +110,5 @@ void NN::gradientStep(const Tensor& loss, float eta) {
     for (size_t i = 0; i != params_.size(); ++i) {
         params_[i] += -eta * partial[i];
     }
+    //std::cout << "loss: " << loss.eval()(0, 0) << '\n';
 }

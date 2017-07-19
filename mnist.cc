@@ -63,8 +63,7 @@ std::vector<Col> read(const std::string& path) {
 }
 
 Col oneHot(size_t size, size_t i) {
-    Col row(size);
-    row.zeros();
+    Col row(size, arma::fill::zeros);
     row(i) = 1.0f;
     return row;
 }

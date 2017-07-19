@@ -100,7 +100,8 @@ public:
             throw std::logic_error("Unexpected expr in Tiled::partial");
         }
 
-        Matrix result(originalShape_.rows, originalShape_.cols);
+        Matrix result(
+                originalShape_.rows, originalShape_.cols, arma::fill::zeros);
         for (size_t i = 0; i != repeatRows_; ++i) {
             const size_t beginRow = i * originalShape_.rows;
             for (size_t j = 0; j != repeatCols_; ++j) {
