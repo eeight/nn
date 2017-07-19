@@ -184,12 +184,9 @@ public:
         if (expr != x_.get() && expr != y_.get()) {
             throw std::logic_error("Unexpected expr in BinaryOp::partial");
         }
-        return Operator().partial(
-                x_.get(),
-                y_.get(),
-                expr,
-                value,
-                selfPartial);
+        auto result = Operator().partial(
+                x_.get(), y_.get(), expr, value, selfPartial);
+        return result;
     }
 
 private:
@@ -229,6 +226,40 @@ private:
     float y_;
 };
 
+class Reshape : public Expr {
+public:
+    Reshape(Shape shape, Shape originalShape, std::shared_ptr<Expr> x) :
+        Expr(shape),
+        originalShape_(originalShape),
+        x_(std::move(x))
+    {}
+
+    Matrix eval(Ad *ad) const override {
+        Matrix result = x_->eval(ad);
+        result.reshape(shape().rows, shape().cols);
+        if (ad) {
+            ad->trace(this, {x_.get()}, result);
+        }
+        return result;
+    }
+
+    Matrix partial(
+            const Expr* expr,
+            const ValueGetter&,
+            const Matrix& selfPartial) const override {
+        if (expr != x_.get()) {
+            throw std::logic_error("Unexpected expr in Reshape::partial");
+        }
+        auto result = selfPartial;
+        result.reshape(originalShape_.rows, originalShape_.cols);
+        return result;
+    }
+
+private:
+    Shape originalShape_;
+    std::shared_ptr<Expr> x_;
+};
+
 template <class Operator>
 Tensor binaryOpWithMatchingShapes(const Tensor& x, const Tensor& y) {
     const auto& xExpr = unwrap(x);
@@ -257,12 +288,8 @@ Matrix Tensor::eval(Ad *ad) const {
     return expr_->eval(ad);
 }
 
-size_t Tensor::rows() const {
-    return expr_->shape().rows;
-}
-
-size_t Tensor::cols() const {
-    return expr_->shape().cols;
+Shape Tensor::shape() const {
+    return expr_->shape();
 }
 
 Tensor& Tensor::operator +=(const Matrix& matrix) {
@@ -281,6 +308,14 @@ Tensor& Tensor::operator +=(const Matrix& matrix) {
     *var += matrix;
 
     return *this;
+}
+
+Tensor Tensor::reshape(Shape newShape) const {
+    if (newShape.size() != shape().size()) {
+        throw std::runtime_error(
+                "Incompatible shape in Tensor::reshape");
+    }
+    return Tensor(std::make_shared<Reshape>(newShape, shape(), expr_));
 }
 
 Tensor newConstTensor(Matrix init) {

@@ -14,10 +14,10 @@ public:
     ~Tensor();
 
     Matrix eval(Ad *ad = nullptr) const;
-    size_t rows() const;
-    size_t cols() const;
+    Shape shape() const;
 
     Tensor& operator +=(const Matrix& matrix);
+    Tensor reshape(Shape shape) const;
 
     friend const std::shared_ptr<Expr>& unwrap(const Tensor&);
 

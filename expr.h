@@ -28,6 +28,14 @@ struct Shape {
         return {rows, other.cols};
     }
 
+    size_t size() const {
+        return cols * rows;
+    }
+
+    bool isScalar() const {
+        return rows == 1 && cols == 1;
+    }
+
     size_t rows;
     size_t cols;
 };
