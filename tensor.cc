@@ -35,6 +35,8 @@ public:
         throw std::logic_error("Const::partial is not defined");
     }
 
+    const Matrix& value() const { return value_; }
+
 private:
     Matrix value_;
 };
@@ -372,13 +374,32 @@ private:
     std::shared_ptr<Expr> x_;
 };
 
+std::shared_ptr<Const> maybeTile(const Expr* x, Shape shape) {
+    if (x->shape() != Shape{1, 1}) {
+        return {};
+    }
+    if (auto c = dynamic_cast<const Const *>(x)) {
+        Matrix matrix(shape.rows, shape.cols);
+        matrix.fill(c->value()(0, 0));
+        return std::make_shared<Const>(matrix);
+    } else {
+        return {};
+    }
+}
+
 template <class Operator>
 Tensor binaryOpWithMatchingShapes(const Tensor& x, const Tensor& y) {
-    const auto& xExpr = unwrap(x);
-    const auto& yExpr = unwrap(y);
+    auto xExpr = unwrap(x);
+    auto yExpr = unwrap(y);
     if (xExpr->shape() != yExpr->shape()) {
-        throw std::runtime_error(
-                std::string("Incompatible shapes in ") + Operator().name());
+        if (auto tiled = maybeTile(xExpr.get(), yExpr->shape())) {
+            xExpr = std::move(tiled);
+        } else if (auto tiled = maybeTile(yExpr.get(), xExpr->shape())) {
+            yExpr = std::move(tiled);
+        } else {
+            throw std::runtime_error(
+                    std::string("Incompatible shapes in ") + Operator().name());
+        }
     }
     return Tensor(std::make_shared<BinaryOp<Operator>>(
             xExpr->shape(), xExpr, yExpr));
@@ -393,6 +414,12 @@ std::experimental::optional<Matrix>& extractVar(const Tensor& tensor) {
     return variables().at(varExpr->id());
 }
 
+Matrix make11(float x) {
+    Matrix result(1, 1);
+    result.fill(x);
+    return result;
+}
+
 } // namespace
 
 const std::shared_ptr<Expr>& unwrap(const Tensor& tensor) {
@@ -401,6 +428,10 @@ const std::shared_ptr<Expr>& unwrap(const Tensor& tensor) {
 
 Tensor::Tensor(std::shared_ptr<Expr> expr) :
     expr_(std::move(expr))
+{}
+
+Tensor::Tensor(float x) :
+    expr_(std::make_shared<Const>(make11(x)))
 {}
 
 Tensor::~Tensor() = default;
@@ -482,6 +513,19 @@ Tensor operator /(const Tensor& x, const Tensor& y) {
 Tensor operator *(const Tensor& x, const Tensor& y) {
     const auto& xExpr = unwrap(x);
     const auto& yExpr = unwrap(y);
+    if (xExpr->shape().cols != yExpr->shape().rows) {
+        if (auto tiled = maybeTile(xExpr.get(), yExpr->shape())) {
+            return Tensor(std::make_shared<BinaryOp<OperatorHadamardProduct>>(
+                        yExpr->shape(),
+                        tiled,
+                        yExpr));
+        } else if (auto tiled = maybeTile(yExpr.get(), xExpr->shape())) {
+            return Tensor(std::make_shared<BinaryOp<OperatorHadamardProduct>>(
+                        xExpr->shape(),
+                        xExpr,
+                        tiled));
+        }
+    }
     return Tensor(std::make_shared<BinaryOp<OperatorMul>>(
             xExpr->shape() * yExpr->shape(), xExpr, yExpr));
 }

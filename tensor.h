@@ -9,6 +9,7 @@ class Tensor {
 public:
     Tensor() = delete;
     explicit Tensor(std::shared_ptr<Expr>);
+    /* implicit */ Tensor(float x);
     ~Tensor();
 
     Matrix eval(Ad *ad = nullptr) const;
