@@ -2,6 +2,4 @@
 
 #include "types.h"
 
-Matrix sigmoid(const Matrix& x);
-Matrix sigmoidDerivative(const Matrix& x);
-
+Tensor sigmoid(const Tensor& x);

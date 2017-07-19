@@ -15,7 +15,9 @@ public:
     Shape shape() const;
 
     Tensor& operator +=(const Matrix& matrix);
+
     Tensor reshape(Shape shape) const;
+    Tensor operator-() const;
 
     Tensor& operator=(const Matrix& matrix);
     void reset();
@@ -33,12 +35,20 @@ Tensor newConstTensor(Matrix init);
 Tensor operator *(const Tensor& x, const Tensor& y);
 // Hadamard (Schur) product.
 Tensor operator %(const Tensor& x, const Tensor& y);
+// Hadamard (Schur) division.
+Tensor operator /(const Tensor& x, const Tensor& y);
 Tensor operator +(const Tensor& x, const Tensor& y);
 Tensor operator -(const Tensor& x, const Tensor& y);
 
 // Computes x to the power of y.
 // x must have shape (1, 1)
-Tensor pow(const Tensor&x, float y);
+Tensor pow(const Tensor& x, float y);
+
+// Element-wise exponent
+Tensor exp(const Tensor& x);
+
+// Element-wise logarithm
+Tensor log(const Tensor& x);
 
 // Compute partial derivatives of expr by each of the vars.
 std::vector<Matrix> diff(const Tensor& expr, const std::vector<Tensor>& vars);

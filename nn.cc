@@ -55,7 +55,7 @@ void NN::fit(
 
             Matrix batchTarget(outputSize(), batchEnd - batch);
             for (size_t i = batch; i != batchEnd; ++i) {
-                batchTarget.col(i - batch) = oneHot(outputSize(), train[i].y);
+                batchTarget.col(i - batch) = train[i].y;
             }
 
             gradientStep(batchInput, batchTarget, eta, loss, lambda, train.size());
@@ -70,21 +70,13 @@ void NN::fit(
 void NN::gradientStep(
         const Matrix& batchInput,
         const Matrix& batchTarget,
-        float eta,
-        const Loss& loss,
-        float lambda,
-        size_t n) {
-    std::vector<Matrix> partial = diff(
-            lossValue,
-            weights_ and biases_,
-            {
-                {self.input, std::cref(batchInput)},
-                {self.target, std::cref(batchTarget)}
-            });
+        const Tensor& loss,
+        float eta) {
+    input_ = batchInput;
+    target_ = batchTarget;
+    auto partial = diff(loss, params_);
 
-    for (size_t j = 0; j != layers(); ++j) {
-        bias_[j] -= partial.nablaBias[j] * eta;
-        weights_[j] = weights_[j] * (1.0f - eta * lambda / n) -
-            partial.nablaWeights[j] * eta;
+    for (size_t i = 0; i != params_.size(); ++i) {
+        params_[i] += -eta * partial[i];
     }
 }

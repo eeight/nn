@@ -23,7 +23,10 @@ public:
         value_(std::move(value))
     {}
 
-    Matrix eval(Ad *) const override {
+    Matrix eval(Ad *ad) const override {
+        if (ad) {
+            ad->trace(this, {}, value_);
+        }
         return value_;
     }
 
@@ -132,6 +135,30 @@ struct OperatorHadamardProduct {
     }
 };
 
+struct OperatorHadamardDivision {
+    const char *name() const {
+        return "operator /";
+    }
+
+    Matrix eval(const Matrix& x, const Matrix& y) const {
+        return x / y;
+    }
+
+    Matrix partial(
+            const Expr* x,
+            const Expr* y,
+            const Expr* p,
+            const Expr::ValueGetter& value,
+            const Matrix& selfPartial) const {
+        if (p == x) {
+            return 1.0 / value(y) % selfPartial;
+        } else {
+            const auto yValue = value(y);
+            return -value(x) / (yValue % yValue) % selfPartial;
+        }
+    }
+};
+
 struct OperatorMul {
     const char *name() const {
         return "operator *";
@@ -224,6 +251,64 @@ private:
     float y_;
 };
 
+class Exp : public Expr {
+public:
+    Exp(std::shared_ptr<Expr> x) :
+        Expr(x->shape()),
+        x_(std::move(x))
+    {}
+
+    Matrix eval(Ad *ad) const override {
+        Matrix result = exp(x_->eval(ad));
+        if (ad) {
+            ad->trace(this, {x_.get()}, result);
+        }
+        return result;
+    }
+
+    Matrix partial(
+            const Expr* expr,
+            const ValueGetter& value,
+            const Matrix& selfPartial) const override {
+        if (expr != x_.get()) {
+            throw std::logic_error("Unexpected expr in Exp::partial");
+        }
+        return exp(value(expr)) % selfPartial;
+    }
+
+private:
+    std::shared_ptr<Expr> x_;
+};
+
+class Log : public Expr {
+public:
+    Log(std::shared_ptr<Expr> x) :
+        Expr(x->shape()),
+        x_(std::move(x))
+    {}
+
+    Matrix eval(Ad *ad) const override {
+        Matrix result = log(x_->eval(ad));
+        if (ad) {
+            ad->trace(this, {x_.get()}, result);
+        }
+        return result;
+    }
+
+    Matrix partial(
+            const Expr* expr,
+            const ValueGetter& value,
+            const Matrix& selfPartial) const override {
+        if (expr != x_.get()) {
+            throw std::logic_error("Unexpected expr in Exp::partial");
+        }
+        return 1.0f / value(expr) % selfPartial;
+    }
+
+private:
+    std::shared_ptr<Expr> x_;
+};
+
 class Reshape : public Expr {
 public:
     Reshape(Shape shape, Shape originalShape, std::shared_ptr<Expr> x) :
@@ -255,6 +340,35 @@ public:
 
 private:
     Shape originalShape_;
+    std::shared_ptr<Expr> x_;
+};
+
+class Negate : public Expr {
+public:
+    Negate(std::shared_ptr<Expr> x) :
+        Expr(x->shape()),
+        x_(std::move(x))
+    {}
+
+    Matrix eval(Ad *ad) const override {
+        Matrix result = -x_->eval(ad);
+        if (ad) {
+            ad->trace(this, {x_.get()}, result);
+        }
+        return result;
+    }
+
+    Matrix partial(
+            const Expr* expr,
+            const ValueGetter&,
+            const Matrix& selfPartial) const override {
+        if (expr != x_.get()) {
+            throw std::logic_error("Unexpected expr in Negate::partial");
+        }
+        return -selfPartial;
+    }
+
+private:
     std::shared_ptr<Expr> x_;
 };
 
@@ -328,6 +442,10 @@ Tensor Tensor::reshape(Shape newShape) const {
     return Tensor(std::make_shared<Reshape>(newShape, shape(), expr_));
 }
 
+Tensor Tensor::operator-() const {
+    return Tensor(std::make_shared<Negate>(expr_));
+}
+
 Tensor newConstTensor(Matrix init) {
     return Tensor(std::make_shared<Const>(std::move(init)));
 }
@@ -357,6 +475,10 @@ Tensor operator %(const Tensor& x, const Tensor& y) {
     return binaryOpWithMatchingShapes<OperatorHadamardProduct>(x, y);
 }
 
+Tensor operator /(const Tensor& x, const Tensor& y) {
+    return binaryOpWithMatchingShapes<OperatorHadamardDivision>(x, y);
+}
+
 Tensor operator *(const Tensor& x, const Tensor& y) {
     const auto& xExpr = unwrap(x);
     const auto& yExpr = unwrap(y);
@@ -374,6 +496,14 @@ Tensor pow(const Tensor& x, float y) {
                 "pow can be applied only to tensors with shape(1, 1)");
     }
     return Tensor(std::make_shared<Pow>(xExpr, y));
+}
+
+Tensor exp(const Tensor& x) {
+    return Tensor(std::make_shared<Exp>(unwrap(x)));
+}
+
+Tensor log(const Tensor& x) {
+    return Tensor(std::make_shared<Log>(unwrap(x)));
 }
 
 std::vector<Matrix> diff(const Tensor& expr, const std::vector<Tensor>& vars) {
