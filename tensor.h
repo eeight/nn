@@ -30,6 +30,7 @@ private:
 };
 
 Tensor newTensor(size_t rows, size_t cols);
+Tensor newTensor(Shape shape);
 Tensor newTensor(Matrix init);
 Tensor newConstTensor(Matrix init);
 

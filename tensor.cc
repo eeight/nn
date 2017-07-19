@@ -457,6 +457,9 @@ Tensor& Tensor::operator +=(const Matrix& matrix) {
 }
 
 Tensor& Tensor::operator =(const Matrix& matrix) {
+    if (Shape{matrix} != shape()) {
+        throw std::runtime_error("Shape mismatch in tensor assignment");
+    }
     extractVar(*this) = matrix;
     return *this;
 }
@@ -482,9 +485,13 @@ Tensor newConstTensor(Matrix init) {
 }
 
 Tensor newTensor(size_t rows, size_t cols) {
+    return newTensor(Shape{rows, cols});
+}
+
+Tensor newTensor(Shape shape) {
     const size_t id = variables().size();
     variables().emplace_back();
-    return Tensor(std::make_shared<Var>(Shape{rows, cols}, id));
+    return Tensor(std::make_shared<Var>(shape, id));
 }
 
 Tensor newTensor(Matrix init) {

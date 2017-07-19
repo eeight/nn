@@ -8,29 +8,63 @@ size_t maxIndex(const Col& row) {
     return std::max_element(row.begin(), row.end()) - row.begin();
 }
 
-float evaluate(
-        const NN& nn, const std::vector<Sample>& samples) {
-    size_t correct = 0;
-    for (const auto& sample: samples) {
-        const auto a = nn.feedforward(sample.x);
-        correct += (int)maxIndex(a) == sample.y;
+template <class F>
+void forEachBatch(
+        const std::vector<Sample>& samples,
+        size_t batchSize,
+        F f) {
+    const size_t inputSize = samples.front().x.n_rows;
+    const size_t outputSize = samples.front().y.n_rows;
+
+    for (size_t i = 0; i + batchSize <= samples.size(); i += batchSize) {
+        Matrix batchInput(inputSize, batchSize);
+        Matrix batchTarget(outputSize, batchSize);
+        for (size_t j = 0; j != batchSize; ++j) {
+            batchInput.col(j) = samples[i + j].x;
+            batchTarget.col(j) = samples[i + j].y;
+        }
+
+        f(batchInput, batchTarget);
     }
-    return (float)correct / samples.size();
+}
+
+float evaluate(
+        NN& nn, const std::vector<Sample>& samples) {
+    size_t correct = 0;
+    size_t total = 0;
+    forEachBatch(
+        samples,
+        nn.miniBatchSize(),
+        [&](const Matrix& batchInput, const Matrix& batchTarget) {
+            const auto output = nn.predict(batchInput);
+            for (size_t i = 0; i != batchTarget.n_cols; ++i) {
+                correct +=
+                    maxIndex(output.col(i)) == maxIndex(batchTarget.col(i));
+            }
+            total += nn.miniBatchSize();
+        });
+    return (float)correct / total;
 }
 
 } // namespace
 
-Col NN::feedforward(const Col& inputs) const {
-// FIXME figure out batching here
-#if 0
-    Col state = inputs;
+NN::NN(
+        Tensor input,
+        Tensor output,
+        std::vector<Tensor> bias,
+        std::vector<Tensor> weights) :
+    input_(std::move(input)),
+    output_(std::move(output)),
+    bias_(std::move(bias)),
+    weights_(std::move(weights))
+{
+    params_.insert(params_.end(), bias_.begin(), bias_.end());
+    params_.insert(params_.end(), weights_.begin(), weights_.end());
+}
 
-    for (size_t i = 0; i != layers(); ++i) {
-        state = sigmoid(weights_[i] * state + bias_[i]);
-    }
-
-    return state;
-#endif
+Matrix NN::predict(const Matrix& input) {
+    input_ = input;
+    return output_.eval();
 }
 
 void NN::fit(
@@ -38,42 +72,34 @@ void NN::fit(
         const std::vector<Sample>& test,
         size_t epochs,
         float eta,
-        const Loss& loss,
+        LossFunction lossFunction,
         float lambda) {
-    auto target = newTensor(outputSize(), miniBatchSize_);
-    Tensor lossValue = loss(output_, target);
+    auto target = newTensor(output_.shape());
+    Tensor regularizer = newTensor(arma::zeros<Matrix>(1, 1));
+    for (const auto& w: weights_) {
+        regularizer = regularizer + sumSquares(w);
+    }
+    Tensor loss = lossFunction(output_, target) +
+        lambda / (2 * train.size()) * regularizer;
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
         std::shuffle(train.begin(), train.end(), mt);
-        for (size_t batch = 0; batch < train.size(); batch += miniBatchSize) {
-            const size_t batchEnd = std::min(train.size(), batch + miniBatchSize);
-
-            Matrix batchInput(inputSize(), batchEnd - batch);
-            for (size_t i = batch; i != batchEnd; ++i) {
-                batchInput.col(i - batch) = train[i].x;
-            }
-
-            Matrix batchTarget(outputSize(), batchEnd - batch);
-            for (size_t i = batch; i != batchEnd; ++i) {
-                batchTarget.col(i - batch) = train[i].y;
-            }
-
-            gradientStep(batchInput, batchTarget, eta, loss, lambda, train.size());
-        }
-        const auto correctRatio = evaluate(*this, test, loss).correctRatio;
+        forEachBatch(
+            train,
+            miniBatchSize(),
+            [&](const Matrix& batchInput, const Matrix& batchTarget) {
+                input_ = batchInput;
+                target = batchTarget;
+                gradientStep(loss, eta);
+            });
+        const auto correctRatio = evaluate(*this, test);
         std::cout << "Epoch done: " << (epoch + 1) <<
                 ", correct: " << correctRatio <<
                 ", n = " << test.size() << '\n';
     }
 }
 
-void NN::gradientStep(
-        const Matrix& batchInput,
-        const Matrix& batchTarget,
-        const Tensor& loss,
-        float eta) {
-    input_ = batchInput;
-    target_ = batchTarget;
+void NN::gradientStep(const Tensor& loss, float eta) {
     auto partial = diff(loss, params_);
 
     for (size_t i = 0; i != params_.size(); ++i) {

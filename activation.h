@@ -1,5 +1,5 @@
 #pragma once
 
-#include "types.h"
+#include "tensor.h"
 
 Tensor sigmoid(const Tensor& x);

@@ -11,6 +11,3 @@ Tensor crossEntropyLoss(const Tensor& out, const Tensor& target) {
     // x.replace(arma::datum::nan, 0.0f);
     return sum(x);
 }
-
-} // namespace
-

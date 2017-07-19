@@ -12,52 +12,40 @@
 class Builder {
 public:
     explicit Builder(size_t inputSize, size_t miniBatchSize) :
-        inputSize_(inputSize),
-        lastLayerSize_(inputSize),
-        miniBatchSize_(miniBatchSize),
+        input_(newTensor(inputSize, miniBatchSize)),
+        output_(input_)
     {}
 
     void addFullyConnectedLayer(size_t size) {
         bias_.push_back(newTensor(arma::randn<Col>(size)));
+        const size_t lastLayerSize = output_.shape().rows;
         weights_.push_back(newTensor(
-                arma::randn<Matrix>(size, lastLayerSize_) /
-                std::sqrt(static_cast<float>(lastLayerSize_))));
-        lastLayerSize_ = size;
+                arma::randn<Matrix>(size, lastLayerSize) /
+                std::sqrt(static_cast<float>(lastLayerSize))));
+        output_ = sigmoid(weights_.back() * output_ + bias_.back());
     }
 
     NN build() {
-        auto input = newTensor(inputSize_, miniBatchSize);
-        auto output = newTensor(lastLayerSize_, miniBatchSize_);
-
-        Tensor state = input;
-        for (size_t i = 0; i != bias_.size(); ++i) {
-            state = weights_[i] * state + copyCols(bias_[i], miniBatchSize_);
-            state = sigmoid(state);
-        }
-
-        return NN(input, output, miniBatchSize_, bias_, weights_);
+        return NN(input_, output_, bias_, weights_);
     }
 
-    size_t inputSize_;
-    size_t lastLayerSize_;
-    size_t miniBatchSize_;
+    Tensor input_;
+    Tensor output_;
     std::vector<Tensor> bias_;
     std::vector<Tensor> weights_;
 };
 
 int main()
 {
-    Builder builder(28 * 28);
+    Builder builder(28 * 28, 10);
     builder.addFullyConnectedLayer(100);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();
-    auto loss = crossEntropyLoss();
-    nn.sgd(
+    nn.fit(
         mnist::readTrain(),
         mnist::readTest(),
         30,
-        10,
         0.5f,
-        *loss,
+        &crossEntropyLoss,
         5.0);
 }
