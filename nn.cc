@@ -73,19 +73,15 @@ void NN::fit(
         size_t epochs,
         float eta,
         LossFunction lossFunction,
-        float /*lambda*/) {
+        float lambda) {
     auto target = newTensor(output_.shape());
-#if 0
     Tensor regularizer = newTensor(arma::zeros<Matrix>(1, 1));
     for (const auto& w: weights_) {
         regularizer = regularizer + sumSquares(w);
     }
-#endif
-    Tensor loss = lossFunction(output_, target);
-#if 0
-        +
-        lambda / (2 * train.size()) * regularizer;
-#endif
+    Tensor loss =
+        lossFunction(output_, target) / miniBatchSize() +
+        lambda / (2 * (train.size() / miniBatchSize())) * regularizer;
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
         std::shuffle(train.begin(), train.end(), mt);

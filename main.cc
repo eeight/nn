@@ -49,6 +49,6 @@ int main()
         mnist::readTest(),
         30,
         0.5f,
-        &quadraticLoss,
+        &crossEntropyLoss,
         5.0);
 }
