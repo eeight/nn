@@ -11,10 +11,10 @@ public:
         shape_(shape)
     {}
 
-    using ValueGetter = std::function<Matrix (const Expr* expr)>;
+    using ValueGetter = std::function<const Matrix& (const Expr* expr)>;
 
     virtual ~Expr() = default;
-    virtual Matrix eval(Ad *ad) const = 0;
+    virtual std::shared_ptr<Matrix> eval(Ad *ad) const = 0;
     virtual Matrix partial(
             const Expr* subexpr,
             const ValueGetter& valueGetter,

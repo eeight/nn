@@ -4,7 +4,7 @@
 void Ad::trace(
         const Expr* expr,
         const std::initializer_list<Expr* >& deps,
-        const Matrix& value) {
+        std::shared_ptr<Matrix> value) {
     if (expressionToIndex_.count(expr)) {
         // Already computed.
         return;
@@ -26,8 +26,8 @@ std::vector<Matrix> Ad::partial(const std::vector<Tensor>& vars) const {
 
     partials.back() = arma::ones<Matrix>(1, 1);
 
-    auto valueGetter = [this](const Expr* expr) {
-        return expressionValues_.at(expressionToIndex_.at(expr));
+    auto valueGetter = [this](const Expr* expr) -> const Matrix & {
+        return *expressionValues_.at(expressionToIndex_.at(expr));
     };
 
     std::unordered_map<const Expr *, size_t> expressionToVarIndex;

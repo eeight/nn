@@ -20,7 +20,7 @@ public:
     Tensor reshape(Shape shape) const;
     Tensor operator-() const;
 
-    Tensor& operator=(const Matrix& matrix);
+    Tensor& operator=(Matrix matrix);
     void reset();
 
     friend const std::shared_ptr<Expr>& unwrap(const Tensor&);

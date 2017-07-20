@@ -10,7 +10,7 @@ public:
     void trace(
             const Expr* expr,
             const std::initializer_list<Expr* >& deps,
-            const Matrix& value);
+            std::shared_ptr<Matrix> value);
 
     std::vector<Matrix> partial(const std::vector<Tensor>& vars) const;
 
@@ -18,7 +18,7 @@ private:
     // List of sub-expression computed during the evaluation
     std::vector<const Expr *> expressions_;
     // Values of sub-expressions.
-    std::vector<Matrix> expressionValues_;
+    std::vector<std::shared_ptr<Matrix>> expressionValues_;
 
     // For each expression list of expressions that depend
     // on it.

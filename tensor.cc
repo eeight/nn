@@ -1,7 +1,6 @@
 #include "tensor.h"
 #include "ad.h"
 
-#include <experimental/optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -9,21 +8,14 @@
 
 namespace {
 
-using Variables = std::vector<std::experimental::optional<Matrix>>;
-
-Variables& variables() {
-    static Variables variables;
-    return variables;
-}
-
 class Const : public Expr {
 public:
     explicit Const(Matrix value) :
         Expr(Shape(value)),
-        value_(std::move(value))
+        value_(std::make_shared<Matrix>(std::move(value)))
     {}
 
-    Matrix eval(Ad *ad) const override {
+    std::shared_ptr<Matrix> eval(Ad *ad) const override {
         if (ad) {
             ad->trace(this, {}, value_);
         }
@@ -35,30 +27,28 @@ public:
         throw std::logic_error("Const::partial is not defined");
     }
 
-    const Matrix& value() const { return value_; }
+    const Matrix& value() const { return *value_; }
 
 private:
-    Matrix value_;
+    std::shared_ptr<Matrix> value_;
 };
 
 class Var : public Expr {
 public:
-    Var(Shape shape, size_t id) :
+    Var(Shape shape, std::shared_ptr<Matrix> value) :
         Expr(shape),
-        id_(id)
+        value_(std::move(value))
     {}
 
-    Matrix eval(Ad *ad) const override {
-        const auto& var = variables().at(id_);
-        if (!var) {
+    std::shared_ptr<Matrix> eval(Ad *ad) const override {
+        if (!value_) {
             throw std::runtime_error(
-                    "Cannot read from uninitialized variable with id " +
-                    std::to_string(id_));
+                    "Cannot read from uninitialized variable");
         }
         if (ad) {
-            ad->trace(this, {}, *var);
+            ad->trace(this, {}, value_);
         }
-        return *var;
+        return value_;
     }
 
     Matrix partial(
@@ -66,10 +56,10 @@ public:
         throw std::logic_error("Var::partial is not defined");
     }
 
-    size_t id() const { return id_; }
+    std::shared_ptr<Matrix>& value() { return value_; }
 
 private:
-    size_t id_;
+    std::shared_ptr<Matrix> value_;
 };
 
 class Tiled : public Expr {
@@ -84,8 +74,9 @@ public:
         originalShape_(x_->shape())
     {}
 
-    Matrix eval(Ad* ad) const override {
-        Matrix result = repmat(x_->eval(ad), repeatRows_, repeatCols_);
+    std::shared_ptr<Matrix> eval(Ad* ad) const override {
+        auto result = std::make_shared<Matrix>(
+                repmat(*x_->eval(ad), repeatRows_, repeatCols_));
         if (ad) {
             ad->trace(this, {x_.get()}, result);
         }
@@ -248,8 +239,9 @@ public:
         y_(std::move(y))
     {}
 
-    Matrix eval(Ad* ad) const override {
-        Matrix result = Operator().eval(x_->eval(ad), y_->eval(ad));
+    std::shared_ptr<Matrix> eval(Ad* ad) const override {
+        auto result = std::make_shared<Matrix>(
+                Operator().eval(*x_->eval(ad), *y_->eval(ad)));
         if (ad) {
             ad->trace(this, {x_.get(), y_.get()}, result);
         }
@@ -281,9 +273,9 @@ public:
         y_(y)
     {}
 
-    Matrix eval(Ad *ad) const override {
-        Matrix result(1, 1);
-        result.fill(std::pow(x_->eval(ad)(0, 0), y_));
+    std::shared_ptr<Matrix> eval(Ad *ad) const override {
+        auto result = std::make_shared<Matrix>(1, 1);
+        result->fill(std::pow((*x_->eval(ad))(0, 0), y_));
         if (ad) {
             ad->trace(this, {x_.get()}, result);
         }
@@ -312,8 +304,8 @@ public:
         x_(std::move(x))
     {}
 
-    Matrix eval(Ad *ad) const override {
-        Matrix result = exp(x_->eval(ad));
+    std::shared_ptr<Matrix> eval(Ad *ad) const override {
+        auto result = std::make_shared<Matrix>(exp(*x_->eval(ad)));
         if (ad) {
             ad->trace(this, {x_.get()}, result);
         }
@@ -341,8 +333,8 @@ public:
         x_(std::move(x))
     {}
 
-    Matrix eval(Ad *ad) const override {
-        Matrix result = log(x_->eval(ad));
+    std::shared_ptr<Matrix> eval(Ad *ad) const override {
+        auto result = std::make_shared<Matrix>(log(*x_->eval(ad)));
         if (ad) {
             ad->trace(this, {x_.get()}, result);
         }
@@ -371,9 +363,9 @@ public:
         x_(std::move(x))
     {}
 
-    Matrix eval(Ad *ad) const override {
-        Matrix result = x_->eval(ad);
-        result.reshape(shape().rows, shape().cols);
+    std::shared_ptr<Matrix> eval(Ad *ad) const override {
+        auto result = std::make_shared<Matrix>(*x_->eval(ad));
+        result->reshape(shape().rows, shape().cols);
         if (ad) {
             ad->trace(this, {x_.get()}, result);
         }
@@ -404,8 +396,8 @@ public:
         x_(std::move(x))
     {}
 
-    Matrix eval(Ad *ad) const override {
-        Matrix result = -x_->eval(ad);
+    std::shared_ptr<Matrix> eval(Ad *ad) const override {
+        auto result = std::make_shared<Matrix>(-*x_->eval(ad));
         if (ad) {
             ad->trace(this, {x_.get()}, result);
         }
@@ -462,13 +454,13 @@ Tensor binaryOpWithMatchingShapes(const Tensor& x, const Tensor& y) {
             xExpr->shape(), xExpr, yExpr));
 }
 
-std::experimental::optional<Matrix>& extractVar(const Tensor& tensor) {
+std::shared_ptr<Matrix>& extractVar(const Tensor& tensor) {
     auto varExpr = std::dynamic_pointer_cast<Var>(unwrap(tensor));
     if (!varExpr) {
         throw std::runtime_error("Expected a variable");
     }
 
-    return variables().at(varExpr->id());
+    return varExpr->value();
 }
 
 Matrix make11(float x) {
@@ -494,7 +486,7 @@ Tensor::Tensor(float x) :
 Tensor::~Tensor() = default;
 
 Matrix Tensor::eval(Ad *ad) const {
-    return expr_->eval(ad);
+    return *expr_->eval(ad);
 }
 
 Shape Tensor::shape() const {
@@ -513,16 +505,16 @@ Tensor& Tensor::operator +=(const Matrix& matrix) {
     return *this;
 }
 
-Tensor& Tensor::operator =(const Matrix& matrix) {
+Tensor& Tensor::operator =(Matrix matrix) {
     if (Shape{matrix} != shape()) {
         throw std::runtime_error("Shape mismatch in tensor assignment");
     }
-    extractVar(*this) = matrix;
+    extractVar(*this) = std::make_shared<Matrix>(std::move(matrix));
     return *this;
 }
 
 void Tensor::reset() {
-    extractVar(*this) = {};
+    extractVar(*this).reset();
 }
 
 Tensor Tensor::reshape(Shape newShape) const {
@@ -546,16 +538,13 @@ Tensor newTensor(size_t rows, size_t cols) {
 }
 
 Tensor newTensor(Shape shape) {
-    const size_t id = variables().size();
-    variables().emplace_back();
-    return Tensor(std::make_shared<Var>(shape, id));
+    return Tensor(std::make_shared<Var>(shape, nullptr));
 }
 
 Tensor newTensor(Matrix init) {
-    const size_t id = variables().size();
     const Shape shape{init};
-    variables().push_back(std::move(init));
-    return Tensor(std::make_shared<Var>(shape, id));
+    return Tensor(std::make_shared<Var>(
+                shape, std::make_shared<Matrix>(std::move(init))));
 }
 
 Tensor operator +(const Tensor& x, const Tensor& y) {
