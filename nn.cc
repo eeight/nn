@@ -81,7 +81,7 @@ void NN::fit(
     }
     Tensor loss =
         lossFunction(output_, target) / miniBatchSize() +
-        lambda / (2 * (train.size() / miniBatchSize())) * regularizer;
+        lambda / (2 * train.size()) * regularizer;
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
         std::shuffle(train.begin(), train.end(), mt);
@@ -106,5 +106,4 @@ void NN::gradientStep(const Tensor& loss, float eta) {
     for (size_t i = 0; i != params_.size(); ++i) {
         params_[i] += -eta * partial[i];
     }
-    //std::cout << "loss: " << loss.eval()(0, 0) << '\n';
 }

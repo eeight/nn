@@ -41,7 +41,7 @@ int main()
 {
     _MM_SET_EXCEPTION_MASK(_MM_GET_EXCEPTION_MASK() & ~_MM_MASK_INVALID);
     Builder builder(28 * 28, 10);
-    builder.addFullyConnectedLayer(30);
+    builder.addFullyConnectedLayer(100);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();
     nn.fit(
