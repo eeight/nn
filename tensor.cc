@@ -8,6 +8,7 @@
 
 namespace {
 
+#if 0
 class Const : public Expr {
 public:
     explicit Const(Matrix value) :
@@ -392,7 +393,7 @@ private:
 class Negate : public Expr {
 public:
     Negate(std::shared_ptr<Expr> x) :
-        Expr(x->shape()),
+        xpr(x->shape()),
         x_(std::move(x))
     {}
 
@@ -417,50 +418,64 @@ public:
 private:
     std::shared_ptr<Expr> x_;
 };
+#endif
 
-std::shared_ptr<Tiled> maybeTile(
+std::shared_ptr<Expr> maybeTile(
         const std::shared_ptr<Expr>& x, Shape shape, bool onlyScalar = false) {
-    const auto xShape = x->shape();
+    const auto xShape = x->shape;
     if (onlyScalar && xShape != Shape{1, 1}) {
         return {};
     }
     if (shape.rows % xShape.rows || shape.cols % xShape.cols) {
         return {};
     }
-    return std::make_shared<Tiled>(
-            x, shape.rows / xShape.rows, shape.cols / xShape.cols);
+    return std::make_shared<Expr>(
+            shape,
+            Tile{
+                shape.rows / xShape.rows,
+                shape.cols / xShape.cols,
+                xShape},
+            x);
 }
 
-std::shared_ptr<Tiled> maybeTileScalar(
+std::shared_ptr<Expr> maybeTileScalar(
         const std::shared_ptr<Expr>& x, Shape shape) {
     return maybeTile(x, shape, /* onlyScalar = */ true);
 }
 
-template <class Operator>
-Tensor binaryOpWithMatchingShapes(const Tensor& x, const Tensor& y) {
-    auto xExpr = unwrap(x);
-    auto yExpr = unwrap(y);
-    if (xExpr->shape() != yExpr->shape()) {
-        if (auto tiled = maybeTile(xExpr, yExpr->shape())) {
+Tensor binaryOpWithMatchingShapes(
+        BinaryOperator op, const Tensor& x, const Tensor& y) {
+    auto xExpr = x.unwrap();
+    auto yExpr = y.unwrap();
+    if (xExpr->shape != yExpr->shape) {
+        if (auto tiled = maybeTile(xExpr, yExpr->shape)) {
             xExpr = std::move(tiled);
-        } else if (auto tiled = maybeTile(yExpr, xExpr->shape())) {
+        } else if (auto tiled = maybeTile(yExpr, xExpr->shape)) {
             yExpr = std::move(tiled);
         } else {
             throw std::runtime_error(
-                    std::string("Incompatible shapes in ") + Operator().name());
+                    std::string("Incompatible shapes in binary operator"));
         }
     }
-    return Tensor(std::make_shared<BinaryOp<Operator>>(
-            xExpr->shape(), xExpr, yExpr));
+    return Tensor(std::make_shared<Expr>(
+            xExpr->shape, BinaryOp{op}, xExpr, yExpr));
 }
 
-std::shared_ptr<Matrix>& extractVar(const Tensor& tensor) {
-    auto varExpr = std::dynamic_pointer_cast<Var>(unwrap(tensor));
-    if (!varExpr) {
-        throw std::runtime_error("Expected a variable");
+Matrix& extractVarForMutation(const Tensor& tensor, Shape shape) {
+    if (shape != tensor.shape()) {
+        throw std::runtime_error("Shape mismatch in assignment");
     }
-
-    return varExpr->value();
+    auto var = mpark::get_if<Var>(&tensor.unwrap()->op);
+    if (!var) {
+        throw std::runtime_error("Cannot mutate a non-variable");
+    }
+    auto value = mpark::get_if<Matrix>(&var->state);
+    if (!value) {
+        throw std::runtime_error(
+                "Cannot mutate a placeholder variable " +
+                mpark::get<std::string>(var->state));
+    }
+    return *value;
 }
 
 Matrix make11(float x) {
@@ -469,52 +484,35 @@ Matrix make11(float x) {
     return result;
 }
 
-} // namespace
-
-const std::shared_ptr<Expr>& unwrap(const Tensor& tensor) {
-    return tensor.expr_;
+Tensor makeShapePreservingMutator(const Tensor& x, Op mutator) {
+    return Tensor(std::make_shared<Expr>(
+                x.shape(), std::move(mutator), x.unwrap()));
 }
+
+} // namespace
 
 Tensor::Tensor(std::shared_ptr<Expr> expr) :
     expr_(std::move(expr))
 {}
 
 Tensor::Tensor(float x) :
-    expr_(std::make_shared<Const>(make11(x)))
+    expr_(std::make_shared<Expr>(Shape{1, 1}, Const{make11(x)}))
 {}
 
 Tensor::~Tensor() = default;
 
-Matrix Tensor::eval(Ad *ad) const {
-    return *expr_->eval(ad);
-}
-
 Shape Tensor::shape() const {
-    return expr_->shape();
+    return expr_->shape;
 }
 
 Tensor& Tensor::operator +=(const Matrix& matrix) {
-    auto& var = extractVar(*this);
-    if (!var) {
-        throw std::runtime_error(
-                "Cannot apply operator += to uninitialized variable");
-    }
-
-    *var += matrix;
-
+    extractVarForMutation(*this, Shape{matrix}) += matrix;
     return *this;
 }
 
 Tensor& Tensor::operator =(Matrix matrix) {
-    if (Shape{matrix} != shape()) {
-        throw std::runtime_error("Shape mismatch in tensor assignment");
-    }
-    extractVar(*this) = std::make_shared<Matrix>(std::move(matrix));
+    extractVarForMutation(*this, Shape{matrix}) = std::move(matrix);
     return *this;
-}
-
-void Tensor::reset() {
-    extractVar(*this).reset();
 }
 
 Tensor Tensor::reshape(Shape newShape) const {
@@ -522,91 +520,86 @@ Tensor Tensor::reshape(Shape newShape) const {
         throw std::runtime_error(
                 "Incompatible shape in Tensor::reshape");
     }
-    return Tensor(std::make_shared<Reshape>(newShape, shape(), expr_));
+    return Tensor(std::make_shared<Expr>(
+                newShape, Reshape{shape(), newShape}, expr_));
 }
 
 Tensor Tensor::operator-() const {
-    return Tensor(std::make_shared<Negate>(expr_));
+    return makeShapePreservingMutator(*this, Negate{});
 }
 
-Tensor newConstTensor(Matrix init) {
-    return Tensor(std::make_shared<Const>(std::move(init)));
+Tensor newTensor(std::string name, size_t rows, size_t cols) {
+    return newTensor(std::move(name), Shape{rows, cols});
 }
 
-Tensor newTensor(size_t rows, size_t cols) {
-    return newTensor(Shape{rows, cols});
-}
-
-Tensor newTensor(Shape shape) {
-    return Tensor(std::make_shared<Var>(shape, nullptr));
+Tensor newTensor(std::string name, Shape shape) {
+    return Tensor(std::make_shared<Expr>(
+                shape, Var{std::move(name)}));
 }
 
 Tensor newTensor(Matrix init) {
     const Shape shape{init};
-    return Tensor(std::make_shared<Var>(
-                shape, std::make_shared<Matrix>(std::move(init))));
+    return Tensor(std::make_shared<Expr>(
+                shape, Var{std::move(init)}));
+}
+
+Tensor newConstTensor(Matrix init) {
+    const Shape shape{init};
+    return Tensor(std::make_shared<Expr>(
+                shape, Const{std::move(init)}));
 }
 
 Tensor operator +(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes<OperatorPlus>(x, y);
+    return binaryOpWithMatchingShapes(BinaryOperator::Plus, x, y);
 }
 
 Tensor operator -(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes<OperatorMinus>(x, y);
+    return binaryOpWithMatchingShapes(BinaryOperator::Minus, x, y);
 }
 
 Tensor operator %(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes<OperatorHadamardProduct>(x, y);
+    return binaryOpWithMatchingShapes(BinaryOperator::HadamardMul, x, y);
 }
 
 Tensor operator /(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes<OperatorHadamardDivision>(x, y);
+    return binaryOpWithMatchingShapes(BinaryOperator::HadamardDiv, x, y);
 }
 
 Tensor operator *(const Tensor& x, const Tensor& y) {
-    const auto& xExpr = unwrap(x);
-    const auto& yExpr = unwrap(y);
-    if (xExpr->shape().cols != yExpr->shape().rows) {
-        if (auto tiled = maybeTileScalar(xExpr, yExpr->shape())) {
-            return Tensor(std::make_shared<BinaryOp<OperatorHadamardProduct>>(
-                        yExpr->shape(),
-                        tiled,
-                        yExpr));
-        } else if (auto tiled = maybeTileScalar(yExpr, xExpr->shape())) {
-            return Tensor(std::make_shared<BinaryOp<OperatorHadamardProduct>>(
-                        xExpr->shape(),
-                        xExpr,
-                        tiled));
+    const auto& xExpr = x.unwrap();
+    const auto& yExpr = y.unwrap();
+    if (xExpr->shape.cols != yExpr->shape.rows) {
+        if (auto tiledX = maybeTileScalar(xExpr, yExpr->shape)) {
+            return Tensor(std::move(tiledX)) % y;
+        } else if (auto tiledY = maybeTileScalar(yExpr, xExpr->shape)) {
+            return x % Tensor(std::move(tiledY));
         }
     }
-    return Tensor(std::make_shared<BinaryOp<OperatorMul>>(
-            xExpr->shape() * yExpr->shape(), xExpr, yExpr));
+    return Tensor(std::make_shared<Expr>(
+            xExpr->shape * yExpr->shape,
+            BinaryOp{BinaryOperator::Mul},
+            xExpr,
+            yExpr));
 }
 
 Tensor pow(const Tensor& x, float y) {
     if (y < 0) {
         throw std::runtime_error("Second argument to pow cannot be negative");
     }
-    const auto& xExpr = unwrap(x);
-    if (xExpr->shape() != Shape{1, 1}) {
+    const auto& xExpr = x.unwrap();
+    if (xExpr->shape != Shape{1, 1}) {
         throw std::runtime_error(
                 "pow can be applied only to tensors with shape(1, 1)");
     }
-    return Tensor(std::make_shared<Pow>(xExpr, y));
+    return Tensor(std::make_shared<Expr>(x.shape(), Pow{y}, xExpr));
 }
 
 Tensor exp(const Tensor& x) {
-    return Tensor(std::make_shared<Exp>(unwrap(x)));
+    return makeShapePreservingMutator(x, Exp{});
 }
 
 Tensor log(const Tensor& x) {
-    return Tensor(std::make_shared<Log>(unwrap(x)));
-}
-
-std::vector<Matrix> diff(const Tensor& expr, const std::vector<Tensor>& vars) {
-    Ad ad;
-    expr.eval(&ad);
-    return ad.partial(vars);
+    return makeShapePreservingMutator(x, Log{});
 }
 
 Tensor sumSquares(const Tensor& tensor) {

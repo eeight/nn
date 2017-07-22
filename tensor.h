@@ -12,7 +12,6 @@ public:
     /* implicit */ Tensor(float x);
     ~Tensor();
 
-    Matrix eval(Ad *ad = nullptr) const;
     Shape shape() const;
 
     Tensor& operator +=(const Matrix& matrix);
@@ -21,16 +20,20 @@ public:
     Tensor operator-() const;
 
     Tensor& operator=(Matrix matrix);
-    void reset();
 
-    friend const std::shared_ptr<Expr>& unwrap(const Tensor&);
+    const std::shared_ptr<Expr> unwrap() const { return expr_; }
 
 private:
     std::shared_ptr<Expr> expr_;
 };
 
-Tensor newTensor(size_t rows, size_t cols);
-Tensor newTensor(Shape shape);
+// Create placeholder variable with given name. This variable can
+// be given value only at an argument of compiled function.
+Tensor newTensor(std::string name, size_t rows, size_t cols);
+Tensor newTensor(std::string name, Shape shape);
+
+// Create variable with given value. Its value can be mutated
+// by operators = and +=.
 Tensor newTensor(Matrix init);
 Tensor newConstTensor(Matrix init);
 
@@ -51,9 +54,6 @@ Tensor exp(const Tensor& x);
 
 // Element-wise logarithm
 Tensor log(const Tensor& x);
-
-// Compute partial derivatives of expr by each of the vars.
-std::vector<Matrix> diff(const Tensor& expr, const std::vector<Tensor>& vars);
 
 // Sums squares of all the elements in the tensor, returns scalar.
 Tensor sumSquares(const Tensor& tensor);

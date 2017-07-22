@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+std::vector<Tensor> diff(const Tensor& expr, const std::vector<Tensor>& vars);
+
 class Ad {
 public:
     void trace(
