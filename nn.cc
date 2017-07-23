@@ -90,6 +90,7 @@ void NN::fit(
         lossFunction(output_, target) / miniBatchSize() +
         lambda / (2 * train.size()) * regularizer;
     auto dLoss = compile(diff(loss, params_), {"x", "y"});
+    std::cout << "Loss: " << compile({loss}, {"x", "y"});;
     std::cout << "dLoss: " << dLoss;
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {

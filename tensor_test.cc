@@ -118,3 +118,12 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
         lossValue = nextLossValue;
     }
 }
+
+BOOST_AUTO_TEST_CASE(sum_squares) {
+    auto w = newTensor(arma::ones<Matrix>(2, 2));
+
+    auto l = sumSquares(w);
+    auto dl = diff(l, {w});
+    std::cerr << "L:\n" << compile({l}, {});
+    std::cerr << "DL:\n" << compile(dl, {});
+}
