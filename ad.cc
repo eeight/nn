@@ -96,6 +96,10 @@ struct PartialDiff {
         return self % (1.0f - self) % selfPartial;
     }
 
+    Tensor operator()(const SumSquares&) const {
+        return 2.0 * x() % selfPartial;
+    }
+
     template <class T>
     Tensor operator()(const T&) const {
         throw std::logic_error("Unexpected op in PartialDiff");

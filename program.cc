@@ -81,6 +81,10 @@ struct StatementExecutor {
         result() = 1.0f / (1.0f + exp(-x()));
     }
 
+    void operator()(const SumSquares&) const {
+        result().fill(accu(square(x())));
+    }
+
     template <class T>
     void operator()(const T&) const {
         throw std::logic_error("Unexpected op in StatementExecutor");
@@ -307,6 +311,10 @@ struct PrettyPrinter {
 
     void operator()(const Sigmoid&) {
         out << "sigmoid";
+    }
+
+    void operator()(const SumSquares&) {
+        out << "sumSquares";
     }
 
     template <class T>

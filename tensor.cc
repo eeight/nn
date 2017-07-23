@@ -221,8 +221,10 @@ Tensor sigmoid(const Tensor& x) {
 }
 
 Tensor sumSquares(const Tensor& tensor) {
-    size_t size = tensor.shape().size();
-    return tensor.reshape({1, size}) * tensor.reshape({size, 1});
+    return Tensor(std::make_shared<Expr>(
+        Shape{1, 1},
+        SumSquares{},
+        tensor.unwrap()));
 }
 
 Tensor sum(const Tensor& tensor) {

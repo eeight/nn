@@ -45,7 +45,8 @@ using Op = mpark::variant<
     Negate,
     Transpose,
     Reshape,
-    Sigmoid>;
+    Sigmoid,
+    SumSquares>;
 
 struct Expr {
     template <class Op, class... Args>
