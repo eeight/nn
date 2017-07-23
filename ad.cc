@@ -1,70 +1,198 @@
 #include "ad.h"
-#include "expr.h"
 
-void Ad::trace(
-        const Expr* expr,
-        const std::initializer_list<Expr* >& deps,
-        std::shared_ptr<Matrix> value) {
-    if (expressionToIndex_.count(expr)) {
-        // Already computed.
-        return;
-    }
-    const size_t index = expressions_.size();
-    expressionToIndex_[expr] = index;
-    expressions_.push_back(expr);
-    expressionValues_.push_back(value);
-    parents_.emplace_back();
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
-    for (size_t i = 0; i != deps.size(); ++i) {
-        parents_.at(expressionToIndex_.at(deps.begin()[i])).push_back(index);
-    }
-}
+namespace {
 
-std::vector<Matrix> Ad::partial(const std::vector<Tensor>& vars) const {
-    std::vector<Matrix> result(vars.size());
-    std::vector<Matrix> partials(expressions_.size());
-
-    partials.back() = arma::ones<Matrix>(1, 1);
-
-    auto valueGetter = [this](const Expr* expr) -> const Matrix & {
-        return *expressionValues_.at(expressionToIndex_.at(expr));
-    };
-
-    std::unordered_map<const Expr *, size_t> expressionToVarIndex;
-    for (size_t i = 0; i != vars.size(); ++i) {
-        expressionToVarIndex.emplace(unwrap(vars[i]).get(), i);
+struct PartialDiff {
+    Tensor operator()(const Tile& tile) const {
+        return Tensor(std::make_shared<Expr>(
+            tile.originalShape,
+            Untile{
+                tile.repeatRows,
+                tile.repeatCols,
+                tile.originalShape},
+            selfPartial.unwrap()));
     }
 
-    for (size_t i = 1; i != expressions_.size(); ++i) {
-        const size_t j = expressions_.size() - 1 - i;
-        if (parents_.at(j).empty()) {
-            continue;
+    Tensor operator()(const Untile& untile) const {
+        return Tensor(std::make_shared<Expr>(
+            Shape{
+                untile.originalShape.rows * untile.repeatRows,
+                untile.originalShape.cols * untile.repeatCols},
+            Tile{
+                untile.repeatRows,
+                untile.repeatCols,
+                untile.originalShape},
+            selfPartial.unwrap()));
+    }
+
+    Tensor operator()(const BinaryOp& binaryOp) const {
+        switch (binaryOp.op) {
+            case BinaryOperator::Plus:
+                return selfPartial;
+
+            case BinaryOperator::Minus:
+                if (arg == 0) {
+                    return selfPartial;
+                } else {
+                    return -selfPartial;
+                }
+            case BinaryOperator::Mul:
+                if (arg == 0) {
+                    return selfPartial * y().t();
+                } else {
+                    return x().t() * selfPartial;
+                }
+            case BinaryOperator::HadamardMul:
+                if (arg == 0) {
+                    return y() % selfPartial;
+                } else {
+                    return x() % selfPartial;
+                }
+                break;
+            case BinaryOperator::HadamardDiv:
+                if (arg == 0) {
+                    return 1.0 / y() % selfPartial;
+                } else {
+                    return -x() / (y() % y()) % selfPartial;
+                }
         }
-        const auto& parents = parents_.at(j);
-        const auto* expr = expressions_.at(j);
-        auto& partial = partials[j];
+    }
 
-        const size_t firstParent = parents.front();
-        partial = expressions_[firstParent]->partial(
-                expr, valueGetter, partials[firstParent]);
-        for (size_t parentIndex = 1; parentIndex != parents.size();
-                ++parentIndex) {
-            const auto parent = parents[parentIndex];
-            partial += expressions_[parent]->partial(
-                    expr, valueGetter, partials[parent]);
-        }
-
-        if (expressionToVarIndex.count(expr)) {
-            result[expressionToVarIndex[expr]] = partial;
-            expressionToVarIndex.erase(expr);
+    Tensor operator()(const Pow& p) const {
+        if (p.y == 1) {
+            return selfPartial;
+        } else if (p.y == 2) {
+            return selfPartial % p.y % x();
+        } else {
+            return selfPartial % p.y % pow(x(), p.y - 1);
         }
     }
 
-    if (!expressionToVarIndex.empty()) {
-        throw std::runtime_error(
-                "Given variable it not used in "
-                "the expression being differentiated");
+    Tensor operator()(const Exp&) const {
+        return self % selfPartial;
     }
 
-    return result;
+    Tensor operator()(const Log&) const {
+        return 1.0 / x() % selfPartial;
+    }
+
+    Tensor operator()(const Negate&) const {
+        return -selfPartial;
+    }
+
+    Tensor operator()(const Transpose&) const {
+        return selfPartial.t();
+    }
+
+    Tensor operator()(const Reshape& reshape) const {
+        return selfPartial.reshape(reshape.originalShape);
+    }
+
+    template <class T>
+    Tensor operator()(const T&) const {
+        throw std::logic_error("Unexpected op in PartialDiff");
+    }
+
+    Tensor x() const { return Tensor(args.at(0)); }
+    Tensor y() const { return Tensor(args.at(1)); }
+
+    const Tensor& self;
+    const Tensor& selfPartial;
+    const std::vector<std::shared_ptr<Expr>>& args;
+    size_t arg;
+};
+
+class Ad {
+public:
+    explicit Ad(const Tensor& tensor) {
+        if (!tensor.shape().isScalar()) {
+            throw std::logic_error("Cannot differentiate a non-scalar value");
+        }
+        trace(tensor.unwrap());
+        partial_.emplace(
+                tensor.unwrap().get(),
+                newConstTensor(arma::ones<Matrix>(1, 1)));
+    }
+
+    void trace(const std::shared_ptr<Expr>& expr) {
+        if (traced_.count(expr.get())) {
+            return;
+        }
+        traced_.insert(expr.get());
+
+        for (const auto& arg: expr->args) {
+            reverseDeps_[arg.get()].push_back(Tensor(expr));
+        }
+        for (const auto& arg: expr->args) {
+            trace(arg);
+        }
+    }
+
+    std::vector<Tensor> partial(const std::vector<Tensor>& vars) {
+        std::vector<Tensor> result;
+        for (const auto& var: vars) {
+            result.push_back(partial(var.unwrap().get()));
+        }
+
+        return result;
+    }
+
+private:
+    Tensor partial(const Expr* expr) {
+        {
+            const auto iter = partial_.find(expr);
+            if (iter != partial_.end()) {
+                return iter->second;
+            }
+        }
+
+        const auto iter = reverseDeps_.find(expr);
+        if (iter == reverseDeps_.end()) {
+            // Result does not even depend on this expression.
+
+            auto result = newConstTensor(
+                    arma::zeros<Matrix>(
+                        expr->shape.rows,
+                        expr->shape.cols));
+            partial_.emplace(expr, result);
+            return result;
+        }
+
+        const auto& parents = iter->second;
+        Tensor result = partial(parents.front(), expr);
+        for (size_t i = 1; i != parents.size(); ++i) {
+            const auto& parent = parents[i];
+            result = result + partial(parent, expr);
+        }
+        partial_.emplace(expr, result);
+        return result;
+    }
+
+    Tensor partial(
+            const Tensor& tensor, const Expr* arg) {
+        const auto& selfPartial = partial(tensor.unwrap().get());
+        const auto& expr = *tensor.unwrap();
+        for (size_t i = 0; i != expr.args.size(); ++i) {
+            if (expr.args[i].get() == arg) {
+                return mpark::visit(
+                        PartialDiff{tensor, selfPartial, expr.args, i}, expr.op);
+            }
+        }
+
+        throw std::logic_error("Ad::partial: arg is not in expr.args");
+    }
+
+    std::unordered_map<const Expr *, std::vector<Tensor>> reverseDeps_;
+    std::unordered_set<const Expr*> traced_;
+    std::unordered_map<const Expr*, Tensor> partial_;
+};
+
+} // namespace
+
+std::vector<Tensor> diff(const Tensor& expr, const std::vector<Tensor>& vars) {
+    return Ad(expr).partial(vars);
 }

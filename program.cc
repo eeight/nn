@@ -10,6 +10,24 @@ struct StatementExecutor {
         result() = repmat(x(), tile.repeatRows, tile.repeatCols);
     }
 
+    void operator()(const Untile& untile) const {
+        auto& r = result();
+        const auto& tiled = x();
+        r.fill(0.0f);
+        for (size_t i = 0; i != untile.repeatRows; ++i) {
+            const size_t beginRow = i * untile.originalShape.rows;
+            for (size_t j = 0; j != untile.repeatCols; ++j) {
+                const size_t beginCol = j * untile.originalShape.cols;
+                r += tiled.submat(
+                        beginRow,
+                        beginCol,
+                        // Subtract one because the ranges are inclusive here.
+                        beginRow + untile.originalShape.rows - 1,
+                        beginCol + untile.originalShape.cols - 1);
+            }
+        }
+    }
+
     void operator()(const BinaryOp& binary) const {
         switch (binary.op) {
             case BinaryOperator::Plus:
@@ -48,6 +66,10 @@ struct StatementExecutor {
 
     void operator()(const Negate&) const {
         result() = -x();
+    }
+
+    void operator()(const Transpose&) const {
+        result() = x().t();
     }
 
     void operator()(const Reshape& reshape) const {
@@ -92,10 +114,13 @@ public:
 
     Program compile() && {
         for (const auto& target: targets_) {
-            compile(target.unwrap().get());
+            compile(target.unwrap());
         }
         return Program(
-                std::move(program_), std::move(tmp_), std::move(result_));
+                std::move(program_),
+                std::move(tmp_),
+                std::move(result_),
+                std::move(retainer_));
     }
 
 private:
@@ -115,10 +140,10 @@ private:
         return ref;
     }
 
-    detail::ReadRef compile(const Expr* expr) {
+    detail::ReadRef compile(const std::shared_ptr<Expr>& expr) {
         {
             // If already compiled return
-            auto iter = compiled_.find(expr);
+            auto iter = compiled_.find(expr.get());
             if (iter != compiled_.end()) {
                 return iter->second;
             }
@@ -131,22 +156,24 @@ private:
                 if (iter == argNameToIndex_.end()) {
                     throw std::runtime_error("Unbound variable :" + *name);
                 }
-                return addCopyStatement(expr, detail::ArgRef{iter->second});
+                return addCopyStatement(expr.get(), detail::ArgRef{iter->second});
             } else {
                 const auto& matrix = mpark::get<Matrix>(var->state);
-                return addCopyStatement(expr, detail::VarRef{&matrix});
+                retainer_.push_back(expr);
+                return addCopyStatement(expr.get(), detail::VarRef{&matrix});
             }
         } else if (const auto konst = mpark::get_if<Const>(&expr->op)) {
-            return addCopyStatement(expr, detail::VarRef{&konst->value});
+            retainer_.push_back(expr);
+            return addCopyStatement(expr.get(), detail::VarRef{&konst->value});
         }
 
         std::vector<detail::ReadRef> args;
         for (const auto& arg: expr->args) {
-            args.push_back(compile(arg.get()));
+            args.push_back(compile(arg));
         }
 
         const auto shape = expr->shape;
-        auto iter = exprToResultIndex_.find(expr);
+        auto iter = exprToResultIndex_.find(expr.get());
         const auto ref = [&]() -> detail::WriteRef {
             if (iter == exprToResultIndex_.end()) {
                 // Allocate new matrix.
@@ -172,6 +199,7 @@ private:
     std::vector<detail::Statement> program_;
     std::vector<Matrix> tmp_;
     std::vector<Matrix> result_;
+    std::vector<std::shared_ptr<Expr>> retainer_;
 };
 
 template <class Result>
@@ -200,7 +228,7 @@ struct RefResolver {
 } // namespace
 
 
-// TODO(eeight): implement operations fusion
+// TODO implement operations fusion
 Program compile(
         const std::vector<Tensor> &targets,
         const std::vector<std::string>& args) {

@@ -11,11 +11,12 @@ include_directories(
 
 add_subdirectory(contrib/variant)
 
-set(CMAKE_CXX_FLAGS "-Wall -Wextra -Werror -fno-omit-frame-pointer")
+set(CMAKE_CXX_FLAGS "-Wall -Wextra -Werror -fno-omit-frame-pointer -fsanitize=address")
 set(CMAKE_CXX_STANDARD 17)
 
 add_library(
     tensor
+    ad.cc
     program.cc
     tensor.cc)
 

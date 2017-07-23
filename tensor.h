@@ -14,10 +14,14 @@ public:
 
     Shape shape() const;
 
+    // Updates variable value.
+    // TODO It is weird that x += y and x = x + y do
+    // completely different things. Needs refining
     Tensor& operator +=(const Matrix& matrix);
 
     Tensor reshape(Shape shape) const;
     Tensor operator-() const;
+    Tensor t() const;
 
     Tensor& operator=(Matrix matrix);
 
@@ -46,7 +50,7 @@ Tensor operator +(const Tensor& x, const Tensor& y);
 Tensor operator -(const Tensor& x, const Tensor& y);
 
 // Computes x to the power of y.
-// x must have shape (1, 1)
+// x must be a scalar
 Tensor pow(const Tensor& x, float y);
 
 // Element-wise exponent

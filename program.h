@@ -27,15 +27,17 @@ class Program {
 public:
     friend class ResolutionVisitor;
     const std::vector<Matrix>& operator()(
-            const std::vector<const Matrix*>& args);
+            const std::vector<const Matrix*>& args = {});
 
     Program(
             std::vector<detail::Statement> program,
             std::vector<Matrix> tmp,
-            std::vector<Matrix> result) :
+            std::vector<Matrix> result,
+            std::vector<std::shared_ptr<Expr>> retainer) :
         program_(std::move(program)),
         tmp_(std::move(tmp)),
-        result_(std::move(result))
+        result_(std::move(result)),
+        retainer_(std::move(retainer))
     {}
 
 private:
@@ -44,10 +46,12 @@ private:
             const std::vector<const Matrix *>& args);
 
     std::vector<detail::Statement> program_;
+    // TODO(eeight) reuse tmp space
     std::vector<Matrix> tmp_;
     std::vector<Matrix> result_;
+    std::vector<std::shared_ptr<Expr>> retainer_;
 };
 
 Program compile(
-            const std::vector<Tensor> &targets,
+            const std::vector<Tensor>& targets,
             const std::vector<std::string>& args);

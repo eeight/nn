@@ -13,19 +13,23 @@ enum class BinaryOperator {
     HadamardDiv
 };
 
+// Maybe the best ADT you can have in C++.
 struct Const { Matrix value; };
 struct Var { mpark::variant<Matrix, std::string> state;  };
-struct Tile { size_t repeatCols; size_t repeatRows; Shape originalShape; };
+struct Tile { size_t repeatRows; size_t repeatCols; Shape originalShape; };
+struct Untile { size_t repeatRows; size_t repeatCols; Shape originalShape; };
 struct BinaryOp { BinaryOperator op; };
 struct Pow { float y; };
 struct Exp {};
 struct Log {};
 struct Copy {};
 struct Negate {};
+// TODO prob needs mul - transpose fusion.
+struct Transpose {};
 struct Reshape { Shape shape; Shape originalShape; };
 
 using Op = mpark::variant<
-        Const, Var, Tile, BinaryOp, Pow, Exp, Log, Copy, Negate, Reshape>;
+        Const, Var, Tile, Untile, BinaryOp, Pow, Exp, Log, Copy, Negate, Transpose, Reshape>;
 
 struct Expr {
     template <class Op, class... Args>

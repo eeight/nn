@@ -30,6 +30,10 @@ struct Shape {
         return {rows, other.cols};
     }
 
+    Shape t() const {
+        return {cols, rows};
+    }
+
     size_t size() const {
         return cols * rows;
     }
