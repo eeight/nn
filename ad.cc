@@ -92,6 +92,10 @@ struct PartialDiff {
         return selfPartial.reshape(reshape.originalShape);
     }
 
+    Tensor operator()(const Sigmoid&) const {
+        return self % (1.0f - self) % selfPartial;
+    }
+
     template <class T>
     Tensor operator()(const T&) const {
         throw std::logic_error("Unexpected op in PartialDiff");

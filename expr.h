@@ -27,9 +27,23 @@ struct Negate {};
 // TODO prob needs mul - transpose fusion.
 struct Transpose {};
 struct Reshape { Shape shape; Shape originalShape; };
+struct Sigmoid {};
+struct SumSquares {};
 
 using Op = mpark::variant<
-        Const, Var, Tile, Untile, BinaryOp, Pow, Exp, Log, Copy, Negate, Transpose, Reshape>;
+    Const,
+    Var,
+    Tile,
+    Untile,
+    BinaryOp,
+    Pow,
+    Exp,
+    Log,
+    Copy,
+    Negate,
+    Transpose,
+    Reshape,
+    Sigmoid>;
 
 struct Expr {
     template <class Op, class... Args>

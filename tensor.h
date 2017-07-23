@@ -59,6 +59,9 @@ Tensor exp(const Tensor& x);
 // Element-wise logarithm
 Tensor log(const Tensor& x);
 
+// Element-wise sigmoid
+Tensor sigmoid(const Tensor& x);
+
 // Sums squares of all the elements in the tensor, returns scalar.
 Tensor sumSquares(const Tensor& tensor);
 // Sums all the elements in the tensor, returns scalar.

@@ -77,6 +77,10 @@ struct StatementExecutor {
         result().reshape(reshape.shape.rows, reshape.shape.cols);
     }
 
+    void operator()(const Sigmoid&) const {
+        result() = 1.0f / (1.0f + exp(-x()));
+    }
+
     template <class T>
     void operator()(const T&) const {
         throw std::logic_error("Unexpected op in StatementExecutor");
@@ -302,6 +306,10 @@ struct PrettyPrinter {
     void operator()(const Reshape& reshape) {
         out << "reshape<" << reshape.shape.rows << ", " <<
             reshape.shape.cols << ">";
+    }
+
+    void operator()(const Sigmoid&) {
+        out << "sigmoid";
     }
 
     template <class T>

@@ -92,10 +92,6 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
     }
 }
 
-Tensor sigmoid(const Tensor& x) {
-    return 1.0f / (1.0f + exp(-x));
-}
-
 BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
     auto x = newTensor(Col{{0, 1}});
     auto y = newTensor(Col{{1, 0}});

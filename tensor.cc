@@ -209,6 +209,10 @@ Tensor log(const Tensor& x) {
     return makeShapePreservingMutator(x, Log{});
 }
 
+Tensor sigmoid(const Tensor& x) {
+    return makeShapePreservingMutator(x, Sigmoid{});
+}
+
 Tensor sumSquares(const Tensor& tensor) {
     size_t size = tensor.shape().size();
     return tensor.reshape({1, size}) * tensor.reshape({size, 1});

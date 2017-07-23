@@ -1,5 +1,4 @@
 #include "loss.h"
-#include "activation.h"
 
 Tensor quadraticLoss(const Tensor& out, const Tensor& target) {
     return sumSquares(out - target) * 0.5;

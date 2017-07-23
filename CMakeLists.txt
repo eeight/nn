@@ -22,7 +22,7 @@ add_library(
 
 add_library(
     nn
-    activation.cc loss.cc nn.cc)
+    loss.cc nn.cc)
 
 add_library(
     mnist

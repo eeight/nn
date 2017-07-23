@@ -3,7 +3,6 @@
 #include <iostream>
 #include <random>
 
-#include "activation.h"
 #include "loss.h"
 #include "mnist.h"
 #include "types.h"
