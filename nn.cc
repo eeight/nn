@@ -67,6 +67,7 @@ NN::NN(
     params_(concat(bias_, weights_)),
     eval_(compile({output}, {"x"}))
 {
+    std::cout << "Eval: " << eval_;
 }
 
 Matrix NN::predict(const Matrix& input) const{
@@ -89,6 +90,7 @@ void NN::fit(
         lossFunction(output_, target) / miniBatchSize() +
         lambda / (2 * train.size()) * regularizer;
     auto dLoss = compile(diff(loss, params_), {"x", "y"});
+    std::cout << "dLoss: " << dLoss;
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
         std::shuffle(train.begin(), train.end(), mt);
