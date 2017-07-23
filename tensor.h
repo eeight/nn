@@ -23,7 +23,7 @@ public:
     Tensor operator-() const;
     Tensor t() const;
 
-    Tensor& operator=(Matrix matrix);
+    bool isConst1() const;
 
     const std::shared_ptr<Expr> unwrap() const { return expr_; }
 

@@ -160,17 +160,14 @@ private:
     detail::ReadRef doCompile(const std::shared_ptr<Expr>& expr) {
         // Deal with variable refs.
         if (const auto var = mpark::get_if<Var>(&expr->op)) {
-            if (const auto name = mpark::get_if<std::string>(&var->state)) {
-                auto iter = argNameToIndex_.find(*name);
-                if (iter == argNameToIndex_.end()) {
-                    throw std::runtime_error("Unbound variable :" + *name);
-                }
-                return addCopyStatement(expr.get(), detail::ArgRef{iter->second});
-            } else {
-                const auto& matrix = mpark::get<Matrix>(var->state);
-                retainer_.push_back(expr);
-                return addCopyStatement(expr.get(), detail::VarRef{&matrix});
+            retainer_.push_back(expr);
+            return addCopyStatement(expr.get(), detail::VarRef{&var->value});
+        } else if (const auto ph = mpark::get_if<Placeholder>(&expr->op)) {
+            auto iter = argNameToIndex_.find(ph->name);
+            if (iter == argNameToIndex_.end()) {
+                throw std::runtime_error("Unbound variable :" + ph->name);
             }
+            return addCopyStatement(expr.get(), detail::ArgRef{iter->second});
         } else if (const auto konst = mpark::get_if<Const>(&expr->op)) {
             retainer_.push_back(expr);
             return addCopyStatement(expr.get(), detail::VarRef{&konst->value});

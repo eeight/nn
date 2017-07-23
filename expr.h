@@ -15,7 +15,8 @@ enum class BinaryOperator {
 
 // Maybe the best ADT you can have in C++.
 struct Const { Matrix value; };
-struct Var { mpark::variant<Matrix, std::string> state;  };
+struct Var { Matrix value;  };
+struct Placeholder { std::string name;  };
 struct Tile { size_t repeatRows; size_t repeatCols; Shape originalShape; };
 struct Untile { size_t repeatRows; size_t repeatCols; Shape originalShape; };
 struct BinaryOp { BinaryOperator op; };
@@ -33,6 +34,7 @@ struct SumSquares {};
 using Op = mpark::variant<
     Const,
     Var,
+    Placeholder,
     Tile,
     Untile,
     BinaryOp,

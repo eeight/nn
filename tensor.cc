@@ -61,13 +61,7 @@ Matrix& extractVarForMutation(const Tensor& tensor, Shape shape) {
     if (!var) {
         throw std::runtime_error("Cannot mutate a non-variable");
     }
-    auto value = mpark::get_if<Matrix>(&var->state);
-    if (!value) {
-        throw std::runtime_error(
-                "Cannot mutate a placeholder variable " +
-                mpark::get<std::string>(var->state));
-    }
-    return *value;
+    return var->value;
 }
 
 Matrix make11(float x) {
@@ -102,11 +96,6 @@ Tensor& Tensor::operator +=(const Matrix& matrix) {
     return *this;
 }
 
-Tensor& Tensor::operator =(Matrix matrix) {
-    extractVarForMutation(*this, Shape{matrix}) = std::move(matrix);
-    return *this;
-}
-
 Tensor Tensor::reshape(Shape newShape) const {
     if (newShape.size() != shape().size()) {
         throw std::runtime_error(
@@ -135,13 +124,21 @@ Tensor Tensor::t() const {
     }
 }
 
+bool Tensor::isConst1() const {
+    if (const auto konst = mpark::get_if<Const>(&expr_->op)) {
+        return Shape{konst->value}.isScalar() && konst->value(0, 0) == 1.0f;
+    } else {
+        return false;
+    }
+}
+
 Tensor newTensor(std::string name, size_t rows, size_t cols) {
     return newTensor(std::move(name), Shape{rows, cols});
 }
 
 Tensor newTensor(std::string name, Shape shape) {
     return Tensor(std::make_shared<Expr>(
-                shape, Var{std::move(name)}));
+                shape, Placeholder{std::move(name)}));
 }
 
 Tensor newTensor(Matrix init) {
@@ -165,11 +162,21 @@ Tensor operator -(const Tensor& x, const Tensor& y) {
 }
 
 Tensor operator %(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes(BinaryOperator::HadamardMul, x, y);
+    if (x.isConst1()) {
+        return y;
+    } else if (y.isConst1()) {
+        return x;
+    } else {
+        return binaryOpWithMatchingShapes(BinaryOperator::HadamardMul, x, y);
+    }
 }
 
 Tensor operator /(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes(BinaryOperator::HadamardDiv, x, y);
+    if (y.isConst1()) {
+        return x;
+    } else {
+        return binaryOpWithMatchingShapes(BinaryOperator::HadamardDiv, x, y);
+    }
 }
 
 Tensor operator *(const Tensor& x, const Tensor& y) {
