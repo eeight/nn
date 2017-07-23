@@ -2,8 +2,10 @@
 
 #include "tensor.h"
 
-#include <vector>
 #include <mpark/variant.hpp>
+
+#include <vector>
+#include <iostream>
 
 namespace detail {
 
@@ -39,6 +41,8 @@ public:
         result_(std::move(result)),
         retainer_(std::move(retainer))
     {}
+
+    friend std::ostream& operator <<(std::ostream&, const Program&);
 
 private:
     void execute(

@@ -140,15 +140,20 @@ private:
         return ref;
     }
 
+
     detail::ReadRef compile(const std::shared_ptr<Expr>& expr) {
-        {
-            // If already compiled return
-            auto iter = compiled_.find(expr.get());
-            if (iter != compiled_.end()) {
-                return iter->second;
-            }
+        // If already compiled return
+        auto iter = compiled_.find(expr.get());
+        if (iter != compiled_.end()) {
+            return iter->second;
         }
 
+        auto ref = doCompile(expr);
+        compiled_.emplace(expr.get(), ref);
+        return ref;
+    }
+
+    detail::ReadRef doCompile(const std::shared_ptr<Expr>& expr) {
         // Deal with variable refs.
         if (const auto var = mpark::get_if<Var>(&expr->op)) {
             if (const auto name = mpark::get_if<std::string>(&var->state)) {
@@ -225,6 +230,88 @@ struct RefResolver {
     std::vector<Matrix>& tmp;
 };
 
+struct PrettyPrinter {
+    void operator()(const detail::ResultRef& ref) const {
+        out << "result[" << ref.index << "]";
+    }
+
+    void operator()(const detail::TmpRef& ref) const {
+        out << "tmp[" << ref.index << "]";
+    }
+
+    void operator()(const detail::ArgRef& ref) const {
+        out << "arg[" << ref.index << "]";
+    }
+
+    void operator()(const detail::VarRef& ref) const {
+        out << "var(" << ref.matrix << ")";
+    }
+
+    void operator()(const Tile& tile) const {
+        out << "tile<" << tile.repeatRows << ", " << tile.repeatCols << ">";
+    }
+
+    void operator()(const Untile& untile) const {
+        out << "untile<" << untile.repeatRows << ", " << untile.repeatCols << ">";
+    }
+
+    void operator()(const BinaryOp& op) const {
+        switch (op.op) {
+            case BinaryOperator::Plus:
+                out << "+";
+                break;
+            case BinaryOperator::Minus:
+                out << "-";
+                break;
+            case BinaryOperator::Mul:
+                out << "*";
+                break;
+            case BinaryOperator::HadamardMul:
+                out << "%";
+                break;
+            case BinaryOperator::HadamardDiv:
+                out << "/";
+                break;
+        }
+    }
+
+    void operator()(const Pow& pow) {
+        out << "pow<" << pow.y << ">";
+    }
+
+    void operator()(const Exp&) {
+        out << "exp";
+    }
+
+    void operator()(const Log&) {
+        out << "log";
+    }
+
+    void operator()(const Copy&) {
+        out << "copy";
+    }
+
+    void operator()(const Negate&) {
+        out << "negate";
+    }
+
+    void operator()(const Transpose&) {
+        out << "transpose";
+    }
+
+    void operator()(const Reshape& reshape) {
+        out << "reshape<" << reshape.shape.rows << ", " <<
+            reshape.shape.cols << ">";
+    }
+
+    template <class T>
+    void operator()(const T&) const {
+        throw std::logic_error("Unexpected op in PrettyPrinter");
+    }
+
+    std::ostream& out;
+};
+
 } // namespace
 
 
@@ -261,4 +348,22 @@ const std::vector<Matrix>& Program::operator()(
         execute(s, args);
     }
     return result_;
+}
+
+std::ostream& operator <<(std::ostream& out, const Program& program) {
+    PrettyPrinter pp{out};
+    for (const auto& s: program.program_) {
+        mpark::visit(pp, s.result);
+        out << " = ";
+        mpark::visit(pp, s.op);
+        out << "(";
+        for (size_t i = 0; i != s.args.size(); ++i) {
+            if (i != 0) {
+                out << ", ";
+            }
+            mpark::visit(pp, s.args[i]);
+        }
+        out << ");\n";
+    }
+    return out;
 }
