@@ -112,8 +112,14 @@ Tensor Tensor::reshape(Shape newShape) const {
         throw std::runtime_error(
                 "Incompatible shape in Tensor::reshape");
     }
-    return Tensor(std::make_shared<Expr>(
+    if (shape() == newShape) {
+        return *this;
+    } else if (shape().t() == newShape) {
+        return t();
+    } else {
+        return Tensor(std::make_shared<Expr>(
                 newShape, Reshape{newShape, shape()}, expr_));
+    }
 }
 
 Tensor Tensor::operator-() const {
@@ -121,7 +127,12 @@ Tensor Tensor::operator-() const {
 }
 
 Tensor Tensor::t() const {
-    return Tensor(std::make_shared<Expr>(shape().t(), Transpose{}, expr_));
+    if (mpark::get_if<Transpose>(&expr_->op)) {
+        // Transpose-transpose fusion.
+        return Tensor(expr_->args.front());
+    } else {
+        return Tensor(std::make_shared<Expr>(shape().t(), Transpose{}, expr_));
+    }
 }
 
 Tensor newTensor(std::string name, size_t rows, size_t cols) {

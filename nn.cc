@@ -1,6 +1,6 @@
 #include "nn.h"
 
-#include "activation.h"
+#include "ad.h"
 
 namespace {
 
@@ -46,6 +46,13 @@ float evaluate(
     return (float)correct / total;
 }
 
+template <class T>
+std::vector<T> concat(const std::vector<T>& x, const std::vector<T>& y) {
+    std::vector<T> result = x;
+    result.insert(result.end(), y.begin(), y.end());
+    return result;
+}
+
 } // namespace
 
 NN::NN(
@@ -56,15 +63,14 @@ NN::NN(
     input_(std::move(input)),
     output_(std::move(output)),
     bias_(std::move(bias)),
-    weights_(std::move(weights))
+    weights_(std::move(weights)),
+    params_(concat(bias_, weights_)),
+    eval_(compile({output}, {"x"}))
 {
-    params_.insert(params_.end(), bias_.begin(), bias_.end());
-    params_.insert(params_.end(), weights_.begin(), weights_.end());
 }
 
-Matrix NN::predict(const Matrix& input) {
-    input_ = input;
-    return output_.eval();
+Matrix NN::predict(const Matrix& input) const{
+    return eval_({&input}).front();
 }
 
 void NN::fit(
@@ -74,7 +80,7 @@ void NN::fit(
         float eta,
         LossFunction lossFunction,
         float lambda) {
-    auto target = newTensor(output_.shape());
+    auto target = newTensor("y", output_.shape());
     Tensor regularizer = newTensor(arma::zeros<Matrix>(1, 1));
     for (const auto& w: weights_) {
         regularizer = regularizer + sumSquares(w);
@@ -82,6 +88,7 @@ void NN::fit(
     Tensor loss =
         lossFunction(output_, target) / miniBatchSize() +
         lambda / (2 * train.size()) * regularizer;
+    auto dLoss = compile(diff(loss, params_), {"x", "y"});
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
         std::shuffle(train.begin(), train.end(), mt);
@@ -89,9 +96,7 @@ void NN::fit(
             train,
             miniBatchSize(),
             [&](const Matrix& batchInput, const Matrix& batchTarget) {
-                input_ = batchInput;
-                target = batchTarget;
-                gradientStep(loss, eta);
+                gradientStep(batchInput, batchTarget, dLoss, eta);
             });
         const auto correctRatio = evaluate(*this, test);
         std::cout << "Epoch done: " << (epoch + 1) <<
@@ -100,8 +105,12 @@ void NN::fit(
     }
 }
 
-void NN::gradientStep(const Tensor& loss, float eta) {
-    auto partial = diff(loss, params_);
+void NN::gradientStep(
+        const Matrix& input,
+        const Matrix& target,
+        Program& dLoss,
+        float eta) {
+    auto partial = dLoss({&input, &target});
 
     for (size_t i = 0; i != params_.size(); ++i) {
         params_[i] += -eta * partial[i];

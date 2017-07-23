@@ -4,6 +4,7 @@
 #include "train.h"
 #include "types.h"
 #include "tensor.h"
+#include "program.h"
 
 #include <vector>
 
@@ -17,7 +18,7 @@ public:
             std::vector<Tensor> bias,
             std::vector<Tensor> weights);
 
-    Matrix predict(const Matrix& input);
+    Matrix predict(const Matrix& input) const;
 
     void fit(
             std::vector<Sample> train,
@@ -32,11 +33,15 @@ public:
     size_t miniBatchSize() const { return input_.shape().cols; }
 
 public:
-    void gradientStep(const Tensor& loss, float eta);
+    void gradientStep(
+            const Matrix& input,
+            const Matrix& target,
+            Program& dLoss, float eta);
 
     Tensor input_;
     Tensor output_;
     std::vector<Tensor> bias_;
     std::vector<Tensor> weights_;
     std::vector<Tensor> params_;
+    mutable Program eval_;
 };

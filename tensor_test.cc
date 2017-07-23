@@ -103,21 +103,21 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
     auto b = newTensor(arma::zeros<Matrix>(2, 1));
     std::vector<Tensor> params = {w, b};
 
-    auto loss = sumSquares(sigmoid(w * x + b) - y) + sumSquares(w);
-    auto dLoss = compile(diff(loss, params), {});
-
-    BOOST_TEST(loss.shape().isScalar());
+    auto lossTensor = sumSquares(sigmoid(w * x + b) - y) + sumSquares(w);
+    BOOST_TEST(lossTensor.shape().isScalar());
+    auto loss = compile({lossTensor}, {});
+    auto dLoss = compile(diff(lossTensor, params), {});
 
     const float eta = 0.05;
 
-    float lossValue = eval(loss)(0, 0);
+    float lossValue = loss().front()(0, 0);
     for (size_t i = 0; i != 100; ++i) {
         auto partial = dLoss();
         for (size_t j = 0; j != params.size(); ++j) {
             params[j] += -eta * partial[j];
         }
 
-        const float nextLossValue = eval(loss)(0, 0);
+        const float nextLossValue = loss().front()(0, 0);
         BOOST_TEST(nextLossValue < lossValue);
         lossValue = nextLossValue;
     }

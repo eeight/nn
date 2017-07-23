@@ -14,7 +14,7 @@
 class Builder {
 public:
     explicit Builder(size_t inputSize, size_t miniBatchSize) :
-        input_(newTensor(inputSize, miniBatchSize)),
+        input_(newTensor("x", inputSize, miniBatchSize)),
         output_(input_)
     {}
 
