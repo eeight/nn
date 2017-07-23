@@ -28,22 +28,37 @@ struct StatementExecutor {
         }
     }
 
-    void operator()(const BinaryOp& binary) const {
-        switch (binary.op) {
+    void operator()(const detail::FusedBinaryOp& binary) const {
+        const auto& xMod = binary.xMod;
+        const auto& yMod = binary.yMod;
+        if (!binary.xMod.transpose && !binary.yMod.transpose) {
+            dispatchBinaryOp(binary.op, x() * xMod.k, y() * yMod.k);
+        } else if (!binary.xMod.transpose && binary.yMod.transpose) {
+            dispatchBinaryOp(binary.op, x() * xMod.k, y().t() * yMod.k);
+        } else if (binary.xMod.transpose && !binary.yMod.transpose) {
+            dispatchBinaryOp(binary.op, x().t() * xMod.k, y() * yMod.k);
+        } else {
+            dispatchBinaryOp(binary.op, x().t() * xMod.k, y().t() * yMod.k);
+        }
+    }
+
+    template <class X, class Y>
+    void dispatchBinaryOp(BinaryOperator op, X&& x, Y&& y) const {
+        switch (op) {
             case BinaryOperator::Plus:
-                result() = x() + y();
+                result() = x + y;
                 break;
             case BinaryOperator::Minus:
-                result() = x() - y();
+                result() = x - y;
                 break;
             case BinaryOperator::Mul:
-                result() = x() * y();
+                result() = x * y;
                 break;
             case BinaryOperator::HadamardMul:
-                result() = x() % y();
+                result() = x % y;
                 break;
             case BinaryOperator::HadamardDiv:
-                result() = x() / y();
+                result() = x / y;
                 break;
         }
     }
@@ -85,11 +100,6 @@ struct StatementExecutor {
         result().fill(accu(square(x())));
     }
 
-    template <class T>
-    void operator()(const T&) const {
-        throw std::logic_error("Unexpected op in StatementExecutor");
-    }
-
     Matrix& result() const { return *writeRefResolver(stmt.result); }
     const Matrix& x() const { return *readRefResolver(stmt.args.at(0)); }
     const Matrix& y() const { return *readRefResolver(stmt.args.at(1)); }
@@ -97,6 +107,50 @@ struct StatementExecutor {
     ReadRefResolver readRefResolver;
     WriteRefResolver writeRefResolver;
     detail::Statement stmt;
+};
+
+struct StatementFuser {
+    detail::VmOp operator()(const BinaryOp& binaryOp) {
+        return detail::FusedBinaryOp{
+            binaryOp.op,
+            fuse(args.at(0)),
+            fuse(args.at(1))};
+    }
+
+    template <class T>
+    detail::VmOp operator()(const T& t) {
+        return t;
+    }
+
+    detail::VmOp operator()(const Const&) {
+        throw std::logic_error("Unexpected op in StatementFuser");
+    }
+
+    detail::VmOp operator()(const Var&) {
+        throw std::logic_error("Unexpected op in StatementFuser");
+    }
+
+    detail::VmOp operator()(const Placeholder&) {
+        throw std::logic_error("Unexpected op in StatementFuser");
+    }
+
+    detail::ScalarTranspose fuse(std::shared_ptr<Expr>& expr) {
+        detail::ScalarTranspose result;
+        for (;;) {
+            if (mpark::get_if<Transpose>(&expr->op)) {
+                expr = expr->args.front();
+                result.transpose = !result.transpose;
+            } else if (mpark::get_if<Negate>(&expr->op)) {
+                expr = expr->args.front();
+                result.k *= -1;
+            } else {
+                break;
+            }
+        }
+        return result;
+    }
+
+    std::vector<std::shared_ptr<Expr>> args;
 };
 
 class Compiler {
@@ -142,7 +196,7 @@ private:
             return ref;
         }
         program_.push_back({
-            Op{Copy{}},
+            detail::VmOp{Copy{}},
             std::vector<detail::ReadRef>{ref},
             detail::WriteRef{detail::ResultRef{iter->second}}});
         return ref;
@@ -177,11 +231,6 @@ private:
             return addCopyStatement(expr.get(), detail::VarRef{&konst->value});
         }
 
-        std::vector<detail::ReadRef> args;
-        for (const auto& arg: expr->args) {
-            args.push_back(compile(arg));
-        }
-
         const auto shape = expr->shape;
         auto iter = exprToResultIndex_.find(expr.get());
         const auto ref = [&]() -> detail::WriteRef {
@@ -194,10 +243,25 @@ private:
                 return detail::ResultRef{iter->second};
             }
         }();
-        program_.push_back({expr->op, std::move(args), ref});
+
+        fuseStatement(expr.get(), ref);
+
         // Cast write ref to read ref.
         return mpark::visit(
                 [](auto ref) -> detail::ReadRef { return ref; }, ref);
+    }
+
+    void fuseStatement(
+            const Expr* expr,
+            const detail::WriteRef& ref) {
+        StatementFuser fuser{expr->args};
+        const auto op = mpark::visit(fuser, expr->op);
+
+        std::vector<detail::ReadRef> args;
+        for (const auto& arg: fuser.args) {
+            args.push_back(compile(arg));
+        }
+        program_.push_back({op, std::move(args), ref});
     }
 
     std::vector<Tensor> targets_;
@@ -260,8 +324,8 @@ struct PrettyPrinter {
         out << "untile<" << untile.repeatRows << ", " << untile.repeatCols << ">";
     }
 
-    void operator()(const BinaryOp& op) const {
-        switch (op.op) {
+    void operator()(const detail::FusedBinaryOp& binary) const {
+        switch (binary.op) {
             case BinaryOperator::Plus:
                 out << "+";
                 break;
@@ -278,6 +342,15 @@ struct PrettyPrinter {
                 out << "/";
                 break;
         }
+        out << "<*" << binary.xMod.k;
+        if (binary.xMod.transpose) {
+            out << ", t";
+        }
+        out << ", *" << binary.yMod.k;
+        if (binary.yMod.transpose) {
+            out << ", t";
+        }
+        out << ">";
     }
 
     void operator()(const Pow& pow) {
@@ -317,18 +390,12 @@ struct PrettyPrinter {
         out << "sumSquares";
     }
 
-    template <class T>
-    void operator()(const T&) const {
-        throw std::logic_error("Unexpected op in PrettyPrinter");
-    }
-
     std::ostream& out;
 };
 
 } // namespace
 
 
-// TODO implement operations fusion
 Program compile(
         const std::vector<Tensor> &targets,
         const std::vector<std::string>& args) {
@@ -380,3 +447,6 @@ std::ostream& operator <<(std::ostream& out, const Program& program) {
     }
     return out;
 }
+
+// TODO Detect common sub-expressions
+// TODO Fuse scalar multiplication

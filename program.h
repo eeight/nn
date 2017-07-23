@@ -17,8 +17,30 @@ struct VarRef { const Matrix* matrix; };
 using ReadRef = mpark::variant<ArgRef, ResultRef, TmpRef, VarRef>;
 using WriteRef = mpark::variant<ResultRef, TmpRef>;
 
+struct ScalarTranspose {
+    float k = 1.0f;
+    bool transpose = false;
+};
+
+struct FusedBinaryOp {
+    BinaryOperator op; ScalarTranspose xMod; ScalarTranspose yMod; };
+
+using VmOp = mpark::variant<
+    Tile,
+    Untile,
+    FusedBinaryOp,
+    Pow,
+    Exp,
+    Log,
+    Copy,
+    Negate,
+    Transpose,
+    Reshape,
+    Sigmoid,
+    SumSquares>;
+
 struct Statement {
-    Op op;
+    VmOp op;
     std::vector<ReadRef> args;
     WriteRef result;
 };

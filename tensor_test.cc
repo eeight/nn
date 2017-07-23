@@ -123,8 +123,9 @@ BOOST_AUTO_TEST_CASE(sum_squares) {
     auto x = newTensor(Col{{0, 1}});
     auto y = newTensor(Col{{1, 0}});
     auto w = newTensor(arma::ones<Matrix>(2, 2));
+    auto wv = w.reshape({1, 4});
 
-    auto l = sumSquares(w * x - y) + sumSquares(w);
+    auto l = sumSquares(w * x - y) + wv * wv.t();
     auto dl = diff(l, {w});
     std::cerr << "L:\n" << compile({l}, {});
     std::cerr << "DL:\n" << compile(dl, {});
