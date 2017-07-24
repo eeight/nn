@@ -84,11 +84,11 @@ void NN::fit(
     auto target = newTensor("y", output_.shape());
     Tensor regularizer = newTensor(arma::zeros<Matrix>(1, 1));
     for (const auto& w: weights_) {
-        regularizer = regularizer + sumSquares(w);
+        regularizer = regularizer + halfSumSquares(w);
     }
     Tensor loss =
         lossFunction(output_, target) / miniBatchSize() +
-        lambda / (2 * train.size()) * regularizer;
+        lambda / train.size() * regularizer;
     auto dLoss = compile(diff(loss, params_), {"x", "y"});
     std::cout << "Loss: " << compile({loss}, {"x", "y"});;
     std::cout << "dLoss: " << dLoss;

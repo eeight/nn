@@ -63,6 +63,6 @@ Tensor log(const Tensor& x);
 Tensor sigmoid(const Tensor& x);
 
 // Sums squares of all the elements in the tensor, returns scalar.
-Tensor sumSquares(const Tensor& tensor);
+Tensor halfSumSquares(const Tensor& tensor);
 // Sums all the elements in the tensor, returns scalar.
 Tensor sum(const Tensor& tensor);

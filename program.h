@@ -13,17 +13,21 @@ struct ArgRef { size_t index; };
 struct ResultRef { size_t index; };
 struct TmpRef { size_t index; };
 struct VarRef { const Matrix* matrix; };
+struct ConstRef { const Matrix* matrix; };
 
-using ReadRef = mpark::variant<ArgRef, ResultRef, TmpRef, VarRef>;
+using ReadRef = mpark::variant<ArgRef, ResultRef, TmpRef, VarRef, ConstRef>;
 using WriteRef = mpark::variant<ResultRef, TmpRef>;
 
 struct ScalarTranspose {
-    float k = 1.0f;
+    bool negate = false;
     bool transpose = false;
 };
 
 struct FusedBinaryOp {
-    BinaryOperator op; ScalarTranspose xMod; ScalarTranspose yMod; };
+    BinaryOperator op;
+    ScalarTranspose xMod;
+    ScalarTranspose yMod;
+};
 
 using VmOp = mpark::variant<
     Tile,
@@ -37,7 +41,7 @@ using VmOp = mpark::variant<
     Transpose,
     Reshape,
     Sigmoid,
-    SumSquares>;
+    HalfSumSquares>;
 
 struct Statement {
     VmOp op;

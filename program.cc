@@ -1,6 +1,7 @@
 #include "program.h"
 
 #include <unordered_map>
+#include <type_traits>
 
 namespace {
 
@@ -29,21 +30,66 @@ struct StatementExecutor {
     }
 
     void operator()(const detail::FusedBinaryOp& binary) const {
-        const auto& xMod = binary.xMod;
-        const auto& yMod = binary.yMod;
-        if (!binary.xMod.transpose && !binary.yMod.transpose) {
-            dispatchBinaryOp(binary.op, x() * xMod.k, y() * yMod.k);
-        } else if (!binary.xMod.transpose && binary.yMod.transpose) {
-            dispatchBinaryOp(binary.op, x() * xMod.k, y().t() * yMod.k);
-        } else if (binary.xMod.transpose && !binary.yMod.transpose) {
-            dispatchBinaryOp(binary.op, x().t() * xMod.k, y() * yMod.k);
+        makeTemplate(binary.xMod, x(), [&](auto&& xTemplate) {
+            makeTemplate(binary.yMod, y(), [&](auto&& yTemplate) {
+                dispatchBinaryOp(binary.op, xTemplate, yTemplate);
+            });
+        });
+    }
+
+    template <class Cont>
+    static void makeTemplate(
+            const detail::ScalarTranspose& mod, const Matrix& arg, Cont cont) {
+        if (Shape{arg}.isScalar()) {
+            if (mod.negate) {
+                cont(-arg(0, 0));
+            } else {
+                cont(arg(0, 0));
+            }
+        } else if (!mod.transpose && !mod.negate) {
+            cont(arg);
+        } else if (!mod.transpose && mod.negate) {
+            cont(-arg);
+        } else if (mod.transpose && !mod.negate) {
+            cont(arg.t());
         } else {
-            dispatchBinaryOp(binary.op, x().t() * xMod.k, y().t() * yMod.k);
+            cont(-arg.t());
         }
     }
 
-    template <class X, class Y>
-    void dispatchBinaryOp(BinaryOperator op, X&& x, Y&& y) const {
+    template <
+        class X,
+        class Y,
+        class = int,
+        class = typename std::enable_if<
+            std::is_same<float, X>::value ||
+            std::is_same<float, Y>::value>::type>
+    void dispatchBinaryOp(
+            BinaryOperator op, X x, Y y) const {
+        switch (op) {
+            case BinaryOperator::Plus:
+                result() = x + y;
+                break;
+            case BinaryOperator::Minus:
+                result() = x - y;
+                break;
+            case BinaryOperator::Mul:
+            case BinaryOperator::HadamardMul:
+                result() = x * y;
+                break;
+            case BinaryOperator::HadamardDiv:
+                result() = x / y;
+                break;
+        }
+    }
+
+    template <
+        class X,
+        class Y,
+        class = typename std::enable_if<
+            !std::is_same<float, X>::value &&
+            !std::is_same<float, Y>::value>::type>
+    void dispatchBinaryOp(BinaryOperator op, X x, Y y) const {
         switch (op) {
             case BinaryOperator::Plus:
                 result() = x + y;
@@ -96,8 +142,8 @@ struct StatementExecutor {
         result() = 1.0f / (1.0f + exp(-x()));
     }
 
-    void operator()(const SumSquares&) const {
-        result().fill(accu(square(x())));
+    void operator()(const HalfSumSquares&) const {
+        result() = accu(square(x())) * 0.5f;
     }
 
     Matrix& result() const { return *writeRefResolver(stmt.result); }
@@ -142,7 +188,7 @@ struct StatementFuser {
                 result.transpose = !result.transpose;
             } else if (mpark::get_if<Negate>(&expr->op)) {
                 expr = expr->args.front();
-                result.k *= -1;
+                result.negate = !result.negate;
             } else {
                 break;
             }
@@ -228,7 +274,7 @@ private:
             return addCopyStatement(expr.get(), detail::ArgRef{iter->second});
         } else if (const auto konst = mpark::get_if<Const>(&expr->op)) {
             retainer_.push_back(expr);
-            return addCopyStatement(expr.get(), detail::VarRef{&konst->value});
+            return addCopyStatement(expr.get(), detail::ConstRef{&konst->value});
         }
 
         const auto shape = expr->shape;
@@ -294,6 +340,10 @@ struct RefResolver {
         return ref.matrix;
     }
 
+    Result operator()(const detail::ConstRef& ref) const {
+        return ref.matrix;
+    }
+
     const std::vector<const Matrix *>& args;
     std::vector<Matrix>& result;
     std::vector<Matrix>& tmp;
@@ -314,6 +364,14 @@ struct PrettyPrinter {
 
     void operator()(const detail::VarRef& ref) const {
         out << "var(" << ref.matrix << ")";
+    }
+
+    void operator()(const detail::ConstRef& ref) const {
+        if (Shape{*ref.matrix}.isScalar()) {
+            out << "const(" << (*ref.matrix)(0, 0) << ")";
+        } else {
+            out << "const(" << ref.matrix << ")";
+        }
     }
 
     void operator()(const Tile& tile) const {
@@ -342,13 +400,19 @@ struct PrettyPrinter {
                 out << "/";
                 break;
         }
-        out << "<*" << binary.xMod.k;
-        if (binary.xMod.transpose) {
-            out << ", t";
+        out << "<x:";
+        if (binary.xMod.negate) {
+            out << " n";
         }
-        out << ", *" << binary.yMod.k;
+        if (binary.xMod.transpose) {
+            out << " t";
+        }
+        out << "; y:";
+        if (binary.yMod.negate) {
+            out << " n";
+        }
         if (binary.yMod.transpose) {
-            out << ", t";
+            out << " t";
         }
         out << ">";
     }
@@ -386,8 +450,8 @@ struct PrettyPrinter {
         out << "sigmoid";
     }
 
-    void operator()(const SumSquares&) {
-        out << "sumSquares";
+    void operator()(const HalfSumSquares&) {
+        out << "halfSumSquares";
     }
 
     std::ostream& out;

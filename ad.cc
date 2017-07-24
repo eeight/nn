@@ -96,8 +96,8 @@ struct PartialDiff {
         return self % (1.0f - self) % selfPartial;
     }
 
-    Tensor operator()(const SumSquares&) const {
-        return 2.0 * x() % selfPartial;
+    Tensor operator()(const HalfSumSquares&) const {
+        return selfPartial * x();
     }
 
     template <class T>

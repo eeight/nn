@@ -11,9 +11,13 @@ namespace {
 std::shared_ptr<Expr> maybeTile(
         const std::shared_ptr<Expr>& x, Shape shape, bool onlyScalar = false) {
     const auto xShape = x->shape;
-    if (onlyScalar && !xShape.isScalar()) {
+    if (xShape.isScalar()) {
+        return x;
+    } else if (onlyScalar) {
         return {};
     }
+
+
     if (shape.rows % xShape.rows || shape.cols % xShape.cols) {
         return {};
     }
@@ -220,10 +224,10 @@ Tensor sigmoid(const Tensor& x) {
     return makeShapePreservingMutator(x, Sigmoid{});
 }
 
-Tensor sumSquares(const Tensor& tensor) {
+Tensor halfSumSquares(const Tensor& tensor) {
     return Tensor(std::make_shared<Expr>(
         Shape{1, 1},
-        SumSquares{},
+        HalfSumSquares{},
         tensor.unwrap()));
 }
 

@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
     const Col yValue{{1, 0}};
     const std::vector<const Matrix *> args = {&xValue, &yValue};
 
-    auto loss = sumSquares(w * x + b - y) + sumSquares(w);
+    auto loss = halfSumSquares(w * x + b - y) + halfSumSquares(w);
     auto dLoss = compile(diff(loss, params), {"x", "y"});
 
     BOOST_TEST(loss.shape().isScalar());
@@ -99,7 +99,7 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
     auto b = newTensor(arma::zeros<Matrix>(2, 1));
     std::vector<Tensor> params = {w, b};
 
-    auto lossTensor = sumSquares(sigmoid(w * x + b) - y) + sumSquares(w);
+    auto lossTensor = halfSumSquares(sigmoid(w * x + b) - y) + halfSumSquares(w);
     BOOST_TEST(lossTensor.shape().isScalar());
     auto loss = compile({lossTensor}, {});
     auto dLoss = compile(diff(lossTensor, params), {});
@@ -123,9 +123,8 @@ BOOST_AUTO_TEST_CASE(sum_squares) {
     auto x = newTensor(Col{{0, 1}});
     auto y = newTensor(Col{{1, 0}});
     auto w = newTensor(arma::ones<Matrix>(2, 2));
-    auto wv = w.reshape({1, 4});
 
-    auto l = sumSquares(w * x - y) + wv * wv.t();
+    auto l = halfSumSquares(w * x - y) + halfSumSquares(w);
     auto dl = diff(l, {w});
     std::cerr << "L:\n" << compile({l}, {});
     std::cerr << "DL:\n" << compile(dl, {});

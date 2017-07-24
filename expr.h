@@ -29,7 +29,7 @@ struct Negate {};
 struct Transpose {};
 struct Reshape { Shape shape; Shape originalShape; };
 struct Sigmoid {};
-struct SumSquares {};
+struct HalfSumSquares {};
 
 using Op = mpark::variant<
     Const,
@@ -46,7 +46,7 @@ using Op = mpark::variant<
     Transpose,
     Reshape,
     Sigmoid,
-    SumSquares>;
+    HalfSumSquares>;
 
 struct Expr {
     template <class Op, class... Args>

@@ -1,7 +1,7 @@
 #include "loss.h"
 
 Tensor quadraticLoss(const Tensor& out, const Tensor& target) {
-    return sumSquares(out - target) * 0.5;
+    return halfSumSquares(out - target);
 }
 
 Tensor crossEntropyLoss(const Tensor& out, const Tensor& target) {
