@@ -3,6 +3,7 @@
 #include "types.h"
 #include "expr.h"
 
+#include <functional>
 #include <memory>
 
 class Tensor {
@@ -13,11 +14,6 @@ public:
     ~Tensor();
 
     Shape shape() const;
-
-    // Updates variable value.
-    // TODO It is weird that x += y and x = x + y do
-    // completely different things. Needs refining
-    Tensor& operator +=(const Matrix& matrix);
 
     Tensor reshape(Shape shape) const;
     Tensor operator-() const;
@@ -30,6 +26,8 @@ public:
 private:
     std::shared_ptr<Expr> expr_;
 };
+
+void mutate(Tensor& t, const std::function<void (Matrix&)>& mutator);
 
 // Create placeholder variable with given name. This variable can
 // be given value only at an argument of compiled function.

@@ -57,17 +57,6 @@ Tensor binaryOpWithMatchingShapes(
             xExpr->shape, BinaryOp{op}, xExpr, yExpr));
 }
 
-Matrix& extractVarForMutation(const Tensor& tensor, Shape shape) {
-    if (shape != tensor.shape()) {
-        throw std::runtime_error("Shape mismatch in assignment");
-    }
-    auto var = mpark::get_if<Var>(&tensor.unwrap()->op);
-    if (!var) {
-        throw std::runtime_error("Cannot mutate a non-variable");
-    }
-    return var->value;
-}
-
 Matrix make11(float x) {
     Matrix result(1, 1);
     result.fill(x);
@@ -93,11 +82,6 @@ Tensor::~Tensor() = default;
 
 Shape Tensor::shape() const {
     return expr_->shape;
-}
-
-Tensor& Tensor::operator +=(const Matrix& matrix) {
-    extractVarForMutation(*this, Shape{matrix}) += matrix;
-    return *this;
 }
 
 Tensor Tensor::reshape(Shape newShape) const {
@@ -134,6 +118,14 @@ bool Tensor::isConst1() const {
     } else {
         return false;
     }
+}
+
+void mutate(Tensor& tensor, const std::function<void (Matrix&)>& mutator) {
+    auto var = mpark::get_if<Var>(&tensor.unwrap()->op);
+    if (!var) {
+        throw std::runtime_error("Cannot mutate a non-variable");
+    }
+    mutator(var->value);
 }
 
 Tensor newTensor(std::string name, size_t rows, size_t cols) {

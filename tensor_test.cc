@@ -52,7 +52,9 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
     for (size_t i = 0; i != 100; ++i) {
         auto partial = dLoss();
         for (size_t j = 0; j != params.size(); ++j) {
-            params[j] += -eta * partial[j];
+            mutate(params[j], [&](Matrix& param) {
+                param -= eta * partial[j];
+            });
         }
 
         const float nextLossValue = eval(loss)(0, 0);
@@ -83,7 +85,9 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
     for (size_t i = 0; i != 100; ++i) {
         auto partial = dLoss(args);
         for (size_t j = 0; j != params.size(); ++j) {
-            params[j] += -eta * partial[j];
+            mutate(params[j], [&](Matrix& param) {
+                param -= eta * partial[j];
+            });
         }
 
         const float nextLossValue = eval(loss, {"x", "y"}, args)(0, 0);
@@ -110,7 +114,9 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
     for (size_t i = 0; i != 100; ++i) {
         auto partial = dLoss();
         for (size_t j = 0; j != params.size(); ++j) {
-            params[j] += -eta * partial[j];
+            mutate(params[j], [&](Matrix& param) {
+                param -= eta * partial[j];
+            });
         }
 
         const float nextLossValue = loss().front()(0, 0);

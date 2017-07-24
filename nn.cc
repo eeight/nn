@@ -116,6 +116,8 @@ void NN::gradientStep(
     auto partial = dLoss({&input, &target});
 
     for (size_t i = 0; i != params_.size(); ++i) {
-        params_[i] += -eta * partial[i];
+        mutate(params_[i], [&](Matrix& param) {
+            param -= eta * partial[i];
+        });
     }
 }
