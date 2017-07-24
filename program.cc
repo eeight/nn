@@ -152,7 +152,7 @@ struct StatementExecutor {
 
     ReadRefResolver readRefResolver;
     WriteRefResolver writeRefResolver;
-    detail::Statement stmt;
+    const detail::Statement& stmt;
 };
 
 struct StatementFuser {
