@@ -32,7 +32,10 @@ struct StatementExecutor {
     void operator()(const detail::FusedBinaryOp& binary) const {
         makeTemplate(binary.xMod, x(), [&](auto&& xTemplate) {
             makeTemplate(binary.yMod, y(), [&](auto&& yTemplate) {
-                dispatchBinaryOp(binary.op, xTemplate, yTemplate);
+                dispatchBinaryOp(
+                        binary.op,
+                        std::move(xTemplate),
+                        std::move(yTemplate));
             });
         });
     }
@@ -62,10 +65,10 @@ struct StatementExecutor {
         class Y,
         class = int,
         class = typename std::enable_if<
-            std::is_same<float, X>::value ||
-            std::is_same<float, Y>::value>::type>
+            std::is_same<float, typename std::decay<X>::type>::value ||
+            std::is_same<float, typename std::decay<Y>::type>::value>::type>
     void dispatchBinaryOp(
-            BinaryOperator op, X x, Y y) const {
+            BinaryOperator op, X&& x, Y&& y) const {
         switch (op) {
             case BinaryOperator::Plus:
                 result() = x + y;
@@ -87,9 +90,9 @@ struct StatementExecutor {
         class X,
         class Y,
         class = typename std::enable_if<
-            !std::is_same<float, X>::value &&
-            !std::is_same<float, Y>::value>::type>
-    void dispatchBinaryOp(BinaryOperator op, X x, Y y) const {
+            !std::is_same<float, typename std::decay<X>::type>::value &&
+            !std::is_same<float, typename std::decay<Y>::type>::value>::type>
+    void dispatchBinaryOp(BinaryOperator op, X&& x, Y&& y) const {
         switch (op) {
             case BinaryOperator::Plus:
                 result() = x + y;
