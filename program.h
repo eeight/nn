@@ -18,15 +18,15 @@ struct ConstRef { const Matrix* matrix; };
 using ReadRef = mpark::variant<ArgRef, ResultRef, TmpRef, VarRef, ConstRef>;
 using WriteRef = mpark::variant<ResultRef, TmpRef>;
 
-struct ScalarTranspose {
+struct NegateTranspose {
     bool negate = false;
     bool transpose = false;
 };
 
 struct FusedBinaryOp {
     BinaryOperator op;
-    ScalarTranspose xMod;
-    ScalarTranspose yMod;
+    NegateTranspose xMod;
+    NegateTranspose yMod;
 };
 
 using VmOp = mpark::variant<
@@ -71,10 +71,6 @@ public:
     friend std::ostream& operator <<(std::ostream&, const Program&);
 
 private:
-    void execute(
-            const detail::Statement& stmt,
-            const std::vector<const Matrix *>& args);
-
     std::vector<detail::Statement> program_;
     // TODO(eeight) reuse tmp space
     std::vector<Matrix> tmp_;

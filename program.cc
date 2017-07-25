@@ -42,7 +42,7 @@ struct StatementExecutor {
 
     template <class Cont>
     static void makeTemplate(
-            const detail::ScalarTranspose& mod, const Matrix& arg, Cont cont) {
+            const detail::NegateTranspose& mod, const Matrix& arg, Cont cont) {
         if (Shape{arg}.isScalar()) {
             if (mod.negate) {
                 cont(-arg(0, 0));
@@ -183,8 +183,8 @@ struct StatementFuser {
         throw std::logic_error("Unexpected op in StatementFuser");
     }
 
-    detail::ScalarTranspose fuse(std::shared_ptr<Expr>& expr) {
-        detail::ScalarTranspose result;
+    detail::NegateTranspose fuse(std::shared_ptr<Expr>& expr) {
+        detail::NegateTranspose result;
         for (;;) {
             if (mpark::get_if<Transpose>(&expr->op)) {
                 expr = expr->args.front();
@@ -223,6 +223,7 @@ public:
         }
     }
 
+    // TODO Detect common sub-expressions
     Program compile() && {
         for (const auto& target: targets_) {
             compile(target.unwrap());
@@ -253,7 +254,6 @@ private:
 
 
     detail::ReadRef compile(const std::shared_ptr<Expr>& expr) {
-        // If already compiled return
         auto iter = compiled_.find(expr.get());
         if (iter != compiled_.end()) {
             return iter->second;
@@ -469,9 +469,8 @@ Program compile(
     return Compiler(targets, args).compile();
 }
 
-void Program::execute(
-        const detail::Statement& stmt,
-        const std::vector<const Matrix *>& args) {
+const std::vector<Matrix>& Program::operator()(
+        const std::vector<const Matrix*>& args) {
     auto resolveRead = [&](const detail::ReadRef& ref) {
         return mpark::visit(
                 RefResolver<const Matrix *>{args, result_, tmp_},
@@ -482,17 +481,12 @@ void Program::execute(
                 RefResolver<Matrix *>{args, result_, tmp_},
                 ref);
     };
-    mpark::visit(
-            StatementExecutor<
-                decltype(resolveRead),
-                decltype(resolveWrite)>
-            {resolveRead, resolveWrite, stmt}, stmt.op);
-}
-
-const std::vector<Matrix>& Program::operator()(
-        const std::vector<const Matrix*>& args) {
-    for (auto& s: program_) {
-        execute(s, args);
+    for (auto& statement: program_) {
+        mpark::visit(
+                StatementExecutor<
+                    decltype(resolveRead),
+                    decltype(resolveWrite)>
+                {resolveRead, resolveWrite, statement}, statement.op);
     }
     return result_;
 }
@@ -514,6 +508,3 @@ std::ostream& operator <<(std::ostream& out, const Program& program) {
     }
     return out;
 }
-
-// TODO Detect common sub-expressions
-// TODO Fuse scalar multiplication

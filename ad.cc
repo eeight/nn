@@ -40,11 +40,13 @@ struct PartialDiff {
                 } else {
                     return -selfPartial;
                 }
+
             case BinaryOperator::Mul:
                 if (arg == 0) {
                     return selfPartial * y().t();
                 } else {
                     return x().t() * selfPartial;
+
                 }
             case BinaryOperator::HadamardMul:
                 if (arg == 0) {
@@ -52,7 +54,7 @@ struct PartialDiff {
                 } else {
                     return x() % selfPartial;
                 }
-                break;
+
             case BinaryOperator::HadamardDiv:
                 if (arg == 0) {
                     return 1.0 / y() % selfPartial;

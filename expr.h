@@ -25,7 +25,6 @@ struct Exp {};
 struct Log {};
 struct Copy {};
 struct Negate {};
-// TODO prob needs mul - transpose fusion.
 struct Transpose {};
 struct Reshape { Shape shape; Shape originalShape; };
 struct Sigmoid {};

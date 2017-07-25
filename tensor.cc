@@ -17,10 +17,10 @@ std::shared_ptr<Expr> maybeTile(
         return {};
     }
 
-
     if (shape.rows % xShape.rows || shape.cols % xShape.cols) {
         return {};
     }
+
     return std::make_shared<Expr>(
             shape,
             Tile{
