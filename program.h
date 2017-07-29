@@ -41,7 +41,9 @@ using VmOp = mpark::variant<
     Transpose,
     Reshape,
     Sigmoid,
-    HalfSumSquares>;
+    HalfSumSquares,
+    Conv2D,
+    Reverse>;
 
 struct Statement {
     VmOp op;

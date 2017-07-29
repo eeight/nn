@@ -65,6 +65,24 @@ struct PartialDiff {
         abort();
     }
 
+    Tensor operator()(const Conv2D& conv) const {
+        const auto& a = x();
+        const auto& k = y();
+
+        const size_t kRows = k.shape().rows;
+        const size_t kCols = k.shape().cols;
+
+        if (arg == 0) {
+            return conv2d(selfPartial, k.r(), {
+                    kCols - 1 - conv.padTop,
+                    kCols - 1 - conv.padBottom,
+                    kRows - 1 - conv.padLeft,
+                    kRows - 1 - conv.padRight});
+        } else {
+            return conv2d(a, selfPartial, conv);
+        }
+    }
+
     Tensor operator()(const Pow& p) const {
         if (p.y == 1) {
             return selfPartial;
@@ -89,6 +107,10 @@ struct PartialDiff {
 
     Tensor operator()(const Transpose&) const {
         return selfPartial.t();
+    }
+
+    Tensor operator()(const Reverse&) const {
+        return selfPartial.r();
     }
 
     Tensor operator()(const Reshape& reshape) const {

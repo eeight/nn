@@ -29,6 +29,8 @@ struct Transpose {};
 struct Reshape { Shape shape; Shape originalShape; };
 struct Sigmoid {};
 struct HalfSumSquares {};
+struct Conv2D { size_t padTop; size_t padBottom; size_t padLeft; size_t padRight; };
+struct Reverse {};
 
 using Op = mpark::variant<
     Const,
@@ -45,7 +47,9 @@ using Op = mpark::variant<
     Transpose,
     Reshape,
     Sigmoid,
-    HalfSumSquares>;
+    HalfSumSquares,
+    Conv2D,
+    Reverse>;
 
 struct Expr {
     template <class Op, class... Args>

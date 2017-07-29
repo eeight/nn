@@ -17,7 +17,10 @@ public:
 
     Tensor reshape(Shape shape) const;
     Tensor operator-() const;
+    // Transposition
     Tensor t() const;
+    // Reverse rows and columns order.
+    Tensor r() const;
 
     bool isConst1() const;
 
@@ -46,6 +49,14 @@ Tensor operator %(const Tensor& x, const Tensor& y);
 Tensor operator /(const Tensor& x, const Tensor& y);
 Tensor operator +(const Tensor& x, const Tensor& y);
 Tensor operator -(const Tensor& x, const Tensor& y);
+
+// 2D convolution of a using kernel k result has the same shape as a.
+Tensor conv2d(const Tensor& a, const Tensor& kernel);
+// Same as above but with explicit padding.
+Tensor conv2d(
+        const Tensor& a,
+        const Tensor& k,
+        const Conv2D& conv);
 
 // Computes x to the power of y.
 // x must be a scalar

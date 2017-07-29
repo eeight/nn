@@ -112,6 +112,57 @@ struct StatementExecutor {
         }
     }
 
+    void operator()(const Conv2D& conv) const {
+        const auto& a = x();
+        const auto& k = y();
+
+        const size_t kRows = k.n_rows;
+        const size_t kCols = k.n_cols;
+
+        for (size_t row = 0; row < result().n_rows; ++row) {
+            for (size_t col = 0; col < result().n_cols; ++col) {
+                int firstARow = (int)row - conv.padTop;
+                int lastARow = firstARow + kRows;
+                int firstACol = (int)col - conv.padLeft;
+                int lastACol = firstACol + kCols;
+
+                int firstKRow = 0;
+                int lastKRow = kRows;
+                int firstKCol = 0;
+                int lastKCol = kCols;
+
+                if (firstARow < 0) {
+                    firstKRow = -firstARow;
+                    firstARow = 0;
+                }
+                if (lastARow > (int)a.n_rows) {
+                    lastKRow -= lastARow - a.n_rows;
+                    lastARow = a.n_rows;
+                }
+                if (firstACol < 0) {
+                    firstKCol = -firstACol;
+                    firstACol = 0;
+                }
+                if (lastACol > (int)a.n_cols) {
+                    lastKCol -= lastACol - a.n_cols;
+                    lastACol = a.n_cols;
+                }
+                result()(row, col) = dot(
+                        a.submat(
+                            firstARow,
+                            firstACol,
+                            // The ranges are inclusive, so subtract one.
+                            lastARow - 1,
+                            lastACol - 1),
+                        k.submat(
+                            firstKRow,
+                            firstKCol,
+                            lastKRow - 1,
+                            lastKCol - 1));
+            }
+        }
+    }
+
     void operator()(const Pow& pow) const {
         result() = arma::pow(x(), pow.y);
     }
@@ -134,6 +185,10 @@ struct StatementExecutor {
 
     void operator()(const Transpose&) const {
         result() = x().t();
+    }
+
+    void operator()(const Reverse&) const {
+        result() = fliplr(flipud(x()));
     }
 
     void operator()(const Reshape& reshape) const {
@@ -424,6 +479,10 @@ struct PrettyPrinter {
         out << ">";
     }
 
+    void operator()(const Conv2D&) const {
+        out << "conv2";
+    }
+
     void operator()(const Pow& pow) {
         out << "pow<" << pow.y << ">";
     }
@@ -446,6 +505,10 @@ struct PrettyPrinter {
 
     void operator()(const Transpose&) {
         out << "transpose";
+    }
+
+    void operator()(const Reverse&) {
+        out << "reverse";
     }
 
     void operator()(const Reshape& reshape) {

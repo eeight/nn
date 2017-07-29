@@ -112,6 +112,15 @@ Tensor Tensor::t() const {
     }
 }
 
+Tensor Tensor::r() const {
+    if (mpark::get_if<Reverse>(&expr_->op)) {
+        // Reverse-reverse fusion.
+        return Tensor(expr_->args.front());
+    } else {
+        return Tensor(std::make_shared<Expr>(shape(), Reverse{}, expr_));
+    }
+}
+
 bool Tensor::isConst1() const {
     if (const auto konst = mpark::get_if<Const>(&expr_->op)) {
         return Shape{konst->value}.isScalar() && konst->value(0, 0) == 1.0f;
@@ -189,6 +198,31 @@ Tensor operator *(const Tensor& x, const Tensor& y) {
             BinaryOp{BinaryOperator::Mul},
             xExpr,
             yExpr));
+}
+
+Tensor conv2d(const Tensor& a, const Tensor& k) {
+    const size_t kRows = k.shape().rows;
+    const size_t kCols = k.shape().cols;
+    return conv2d(a, k, {
+            /* padTop = */ kRows / 2,
+            /* padBottom = */ (kRows - 1) / 2,
+            /* padLeft = */ kCols / 2,
+            /* padRight = */ (kCols - 1) / 2});
+}
+
+Tensor conv2d(
+        const Tensor& a,
+        const Tensor& k,
+        const Conv2D& conv) {
+    return Tensor(std::make_shared<Expr>(
+                Shape{
+                    a.shape().rows + conv.padTop + conv.padBottom + 1 -
+                        k.shape().rows,
+                    a.shape().cols + conv.padLeft + conv.padRight + 1 -
+                        k.shape().cols},
+                conv,
+                a.unwrap(),
+                k.unwrap()));
 }
 
 Tensor pow(const Tensor& x, float y) {

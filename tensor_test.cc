@@ -135,3 +135,26 @@ BOOST_AUTO_TEST_CASE(sum_squares) {
     std::cerr << "L:\n" << compile({l}, {});
     std::cerr << "DL:\n" << compile(dl, {});
 }
+
+BOOST_AUTO_TEST_CASE(convolution) {
+    auto a = newTensor(arma::randu<Matrix>(5, 5));
+    auto k = newTensor(arma::randu<Matrix>(3, 3));
+    auto t = newTensor(arma::randu<Matrix>(5, 5));
+
+    auto loss = halfSumSquares(conv2d(a, k) - t);
+    auto dLoss = compile(diff(loss, {k}), {});
+
+    const float eta = 0.05;
+
+    float lossValue = eval(loss)(0, 0);
+    for (size_t i = 0; i != 50; ++i) {
+        auto partial = dLoss();
+        mutate(k, [&](Matrix& k) {
+            k -= eta * partial[0];
+        });
+
+        const float nextLossValue = eval(loss)(0, 0);
+        BOOST_TEST(nextLossValue < lossValue);
+        lossValue = nextLossValue;
+    }
+}
