@@ -80,4 +80,4 @@ private:
 
 Program compile(
             const std::vector<Tensor>& targets,
-            const std::vector<std::string>& args);
+            const std::vector<Tensor>& args);

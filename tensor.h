@@ -29,10 +29,10 @@ private:
 
 void mutate(Tensor& t, const std::function<void (Matrix&)>& mutator);
 
-// Create placeholder variable with given name. This variable can
+// Create placeholder variable. This variable can
 // be given value only at an argument of compiled function.
-Tensor newTensor(std::string name, size_t rows, size_t cols);
-Tensor newTensor(std::string name, Shape shape);
+Tensor newTensor(size_t rows, size_t cols);
+Tensor newTensor(Shape shape);
 
 // Create variable with given value. Its value can be mutated
 // by operators = and +=.

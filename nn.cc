@@ -65,7 +65,7 @@ NN::NN(
     bias_(std::move(bias)),
     weights_(std::move(weights)),
     params_(concat(bias_, weights_)),
-    eval_(compile({output}, {"x"}))
+    eval_(compile({output}, {input_}))
 {
     std::cout << "Eval: " << eval_;
 }
@@ -81,7 +81,7 @@ void NN::fit(
         float eta,
         LossFunction lossFunction,
         float lambda) {
-    auto target = newTensor("y", output_.shape());
+    auto target = newTensor(output_.shape());
     Tensor regularizer = newTensor(arma::zeros<Matrix>(1, 1));
     for (const auto& w: weights_) {
         regularizer = regularizer + halfSumSquares(w);
@@ -89,8 +89,8 @@ void NN::fit(
     Tensor loss =
         lossFunction(output_, target) / miniBatchSize() +
         lambda / train.size() * regularizer;
-    auto dLoss = compile(diff(loss, params_), {"x", "y"});
-    std::cout << "Loss: " << compile({loss}, {"x", "y"});;
+    auto dLoss = compile(diff(loss, params_), {input_, target});
+    std::cout << "Loss: " << compile({loss}, {input_, target});
     std::cout << "dLoss: " << dLoss;
     std::mt19937 mt;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {

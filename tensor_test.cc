@@ -15,8 +15,8 @@ BOOST_AUTO_TEST_CASE(const_tensor) {
 
 BOOST_AUTO_TEST_CASE(arg_passthrough) {
     const Matrix m = arma::randu<Matrix>(10, 10);
-    const auto t = newTensor("x", Shape{m});
-    BOOST_REQUIRE(arma::approx_equal(m, eval(t, {"x"}, {&m}), "absdiff", 1e-6));
+    const auto t = newTensor(Shape{m});
+    BOOST_REQUIRE(arma::approx_equal(m, eval(t, {t}, {&m}), "absdiff", 1e-6));
 }
 
 BOOST_AUTO_TEST_CASE(loss_value) {
@@ -64,8 +64,8 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
 }
 
 BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
-    auto x = newTensor("x", 2, 1);
-    auto y = newTensor("y", 2, 1);
+    auto x = newTensor(2, 1);
+    auto y = newTensor(2, 1);
     auto w = newTensor(arma::ones<Matrix>(2, 2));
     auto b = newTensor(arma::zeros<Matrix>(2, 1));
     std::vector<Tensor> params = {w, b};
@@ -75,13 +75,13 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
     const std::vector<const Matrix *> args = {&xValue, &yValue};
 
     auto loss = halfSumSquares(w * x + b - y) + halfSumSquares(w);
-    auto dLoss = compile(diff(loss, params), {"x", "y"});
+    auto dLoss = compile(diff(loss, params), {x, y});
 
     BOOST_TEST(loss.shape().isScalar());
 
     const float eta = 0.05;
 
-    float lossValue = eval(loss, {"x", "y"}, args)(0, 0);
+    float lossValue = eval(loss, {x, y}, args)(0, 0);
     for (size_t i = 0; i != 100; ++i) {
         auto partial = dLoss(args);
         for (size_t j = 0; j != params.size(); ++j) {
@@ -90,7 +90,7 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
             });
         }
 
-        const float nextLossValue = eval(loss, {"x", "y"}, args)(0, 0);
+        const float nextLossValue = eval(loss, {x, y}, args)(0, 0);
         BOOST_TEST(nextLossValue < lossValue);
         lossValue = nextLossValue;
     }

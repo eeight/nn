@@ -206,12 +206,17 @@ class Compiler {
 public:
     Compiler(
             std::vector<Tensor> targets,
-            std::vector<std::string> args) :
-        targets_(std::move(targets)),
-        args_(std::move(args))
+            std::vector<Tensor> args) :
+        targets_(std::move(targets))
     {
-        for (size_t i = 0; i != args_.size(); ++i) {
-            argNameToIndex_[args_[i]] = i;
+        for (size_t i = 0; i != args.size(); ++i) {
+            if (const auto ph =
+                    mpark::get_if<Placeholder>(&args[i].unwrap()->op)) {
+                argToIndex_[ph] = i;
+            } else {
+                throw std::logic_error(
+                        "All arguments in compile() must be placeholders");
+            }
         }
         result_.resize(targets_.size());
         for (size_t i = 0; i != targets_.size(); ++i) {
@@ -270,9 +275,9 @@ private:
             retainer_.push_back(expr);
             return addCopyStatement(expr.get(), detail::VarRef{&var->value});
         } else if (const auto ph = mpark::get_if<Placeholder>(&expr->op)) {
-            auto iter = argNameToIndex_.find(ph->name);
-            if (iter == argNameToIndex_.end()) {
-                throw std::runtime_error("Unbound variable :" + ph->name);
+            auto iter = argToIndex_.find(ph);
+            if (iter == argToIndex_.end()) {
+                throw std::runtime_error("Unbound variable");
             }
             return addCopyStatement(expr.get(), detail::ArgRef{iter->second});
         } else if (const auto konst = mpark::get_if<Const>(&expr->op)) {
@@ -315,8 +320,7 @@ private:
 
     std::vector<Tensor> targets_;
     std::unordered_map<const Expr*, size_t> exprToResultIndex_;
-    std::vector<std::string> args_;
-    std::unordered_map<std::string, size_t> argNameToIndex_;
+    std::unordered_map<const Placeholder*, size_t> argToIndex_;
 
     std::unordered_map<const Expr*, detail::ReadRef> compiled_;
     std::vector<detail::Statement> program_;
@@ -465,7 +469,7 @@ struct PrettyPrinter {
 
 Program compile(
         const std::vector<Tensor> &targets,
-        const std::vector<std::string>& args) {
+        const std::vector<Tensor>& args) {
     return Compiler(targets, args).compile();
 }
 

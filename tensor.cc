@@ -128,13 +128,12 @@ void mutate(Tensor& tensor, const std::function<void (Matrix&)>& mutator) {
     mutator(var->value);
 }
 
-Tensor newTensor(std::string name, size_t rows, size_t cols) {
-    return newTensor(std::move(name), Shape{rows, cols});
+Tensor newTensor(size_t rows, size_t cols) {
+    return newTensor(Shape{rows, cols});
 }
 
-Tensor newTensor(std::string name, Shape shape) {
-    return Tensor(std::make_shared<Expr>(
-                shape, Placeholder{std::move(name)}));
+Tensor newTensor(Shape shape) {
+    return Tensor(std::make_shared<Expr>(shape, Placeholder{}));
 }
 
 Tensor newTensor(Matrix init) {
