@@ -62,6 +62,7 @@ struct PartialDiff {
                     return -x() / (y() % y()) % selfPartial;
                 }
         }
+        abort();
     }
 
     Tensor operator()(const Pow& p) const {

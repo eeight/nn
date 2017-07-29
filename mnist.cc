@@ -83,14 +83,14 @@ std::vector<Sample> zip(std::vector<Col> xs, const std::vector<int>& ys) {
 
 std::vector<Sample> readTest() {
     return zip(
-            read("/Users/eeight/git/nn/data/mnist/t10k-images-idx3-ubyte"),
-            readLabels("/Users/eeight/git/nn/data/mnist/t10k-labels-idx1-ubyte"));
+            read("data/mnist/t10k-images-idx3-ubyte"),
+            readLabels("data/mnist/t10k-labels-idx1-ubyte"));
 }
 
 std::vector<Sample> readTrain() {
     return zip(
-            read("/Users/eeight/git/nn/data/mnist/train-images-idx3-ubyte"),
-            readLabels("/Users/eeight/git/nn/data/mnist/train-labels-idx1-ubyte"));
+            read("data/mnist/train-images-idx3-ubyte"),
+            readLabels("data/mnist/train-labels-idx1-ubyte"));
 }
 
 } // namespace mnist
