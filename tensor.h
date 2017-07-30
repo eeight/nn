@@ -50,8 +50,8 @@ Tensor operator /(const Tensor& x, const Tensor& y);
 Tensor operator +(const Tensor& x, const Tensor& y);
 Tensor operator -(const Tensor& x, const Tensor& y);
 
-// 2D convolution of a using kernel k result has the same shape as a.
-Tensor conv2d(const Tensor& a, const Tensor& kernel);
+// 2D convolution of a using kernel k result.
+Tensor conv2d(const Tensor& a, const Tensor& kernel, bool sameSize);
 // Same as above but with explicit padding.
 Tensor conv2d(
         const Tensor& a,

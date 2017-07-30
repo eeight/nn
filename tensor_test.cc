@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(convolution) {
     auto k = newTensor(arma::randu<Matrix>(3, 3));
     auto t = newTensor(arma::randu<Matrix>(5, 5));
 
-    auto loss = halfSumSquares(conv2d(a, k) - t);
+    auto loss = halfSumSquares(conv2d(a, k, /* sameSize = */ true) - t);
     auto dLoss = compile(diff(loss, {k}), {});
 
     const float eta = 0.05;

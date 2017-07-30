@@ -200,14 +200,18 @@ Tensor operator *(const Tensor& x, const Tensor& y) {
             yExpr));
 }
 
-Tensor conv2d(const Tensor& a, const Tensor& k) {
-    const size_t kRows = k.shape().rows;
-    const size_t kCols = k.shape().cols;
-    return conv2d(a, k, {
-            /* padTop = */ kRows / 2,
-            /* padBottom = */ (kRows - 1) / 2,
-            /* padLeft = */ kCols / 2,
-            /* padRight = */ (kCols - 1) / 2});
+Tensor conv2d(const Tensor& a, const Tensor& k, bool sameSize) {
+    if (sameSize) {
+        const size_t kRows = k.shape().rows;
+        const size_t kCols = k.shape().cols;
+        return conv2d(a, k, {
+                /* padTop = */ kRows / 2,
+                /* padBottom = */ (kRows - 1) / 2,
+                /* padLeft = */ kCols / 2,
+                /* padRight = */ (kCols - 1) / 2});
+    } else {
+        return conv2d(a, k, {0, 0, 0, 0});
+    }
 }
 
 Tensor conv2d(
