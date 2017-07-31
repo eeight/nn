@@ -58,6 +58,8 @@ Tensor conv2d(
         const Tensor& k,
         const Conv2D& conv);
 
+Tensor maxPool(const Tensor& a, size_t rows, size_t cols);
+
 // Computes x to the power of y.
 // x must be a scalar
 Tensor pow(const Tensor& x, float y);

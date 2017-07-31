@@ -46,11 +46,8 @@ Tensor binaryOpWithMatchingShapes(
             yExpr = std::move(tiled);
         } else {
             throw std::runtime_error(
-                    std::string("Incompatible shapes in binary operator: (") +
-                        std::to_string(xExpr->shape.rows) + ", " + std::to_string(xExpr->shape.cols) +
-                        ") and (" +
-                        std::to_string(yExpr->shape.rows) + ", " + std::to_string(yExpr->shape.cols) +
-                        ")");
+                    "Incompatible shapes in binary operator: " + xExpr->shape.toString() +
+                        " and " + yExpr->shape.toString());
         }
     }
     return Tensor(std::make_shared<Expr>(
@@ -227,6 +224,19 @@ Tensor conv2d(
                 conv,
                 a.unwrap(),
                 k.unwrap()));
+}
+
+Tensor maxPool(const Tensor& a, size_t rows, size_t cols) {
+    if (a.shape().rows % rows || a.shape().cols % cols) {
+        throw std::logic_error(
+                "Matrix with shape " + a.shape().toString() +
+                " is not compatible with max pool with shape " +
+                Shape{rows, cols}.toString());
+    }
+    return Tensor(std::make_shared<Expr>(
+                Shape{a.shape().rows / rows, a.shape().cols / cols},
+                MaxPool{rows, cols},
+                a.unwrap()));
 }
 
 Tensor pow(const Tensor& x, float y) {

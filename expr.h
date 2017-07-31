@@ -31,6 +31,8 @@ struct Sigmoid {};
 struct HalfSumSquares {};
 struct Conv2D { size_t padTop; size_t padBottom; size_t padLeft; size_t padRight; };
 struct Reverse {};
+struct MaxPool { size_t rows; size_t cols; };
+struct MaxPoolDiff { size_t rows; size_t cols; };
 
 using Op = mpark::variant<
     Const,
@@ -49,7 +51,9 @@ using Op = mpark::variant<
     Sigmoid,
     HalfSumSquares,
     Conv2D,
-    Reverse>;
+    Reverse,
+    MaxPool,
+    MaxPoolDiff>;
 
 struct Expr {
     template <class Op, class... Args>

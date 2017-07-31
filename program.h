@@ -43,7 +43,9 @@ using VmOp = mpark::variant<
     Sigmoid,
     HalfSumSquares,
     Conv2D,
-    Reverse>;
+    Reverse,
+    MaxPool,
+    MaxPoolDiff>;
 
 struct Statement {
     VmOp op;

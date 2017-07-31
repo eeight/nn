@@ -163,6 +163,31 @@ struct StatementExecutor {
         }
     }
 
+    void operator()(const MaxPool& maxPool) const {
+        for (size_t row = 0; row != result().n_rows; ++row) {
+            for (size_t col = 0; col != result().n_cols; ++col) {
+                result()(row, col) = x().submat(
+                        row * maxPool.rows,
+                        col * maxPool.cols,
+                        (row + 1) * maxPool.rows - 1,
+                        (col + 1) * maxPool.cols - 1).max();
+            }
+        }
+    }
+
+    void operator()(const MaxPoolDiff& maxPool) const {
+        result().fill(0.0f);
+        for (size_t row = 0; row != x().n_rows; ++row) {
+            const size_t rowPool = row / maxPool.rows;
+            for (size_t col = 0; col != x().n_cols; ++col) {
+                const size_t colPool = col / maxPool.cols;
+                if (x()(row, col) == y()(rowPool, colPool)) {
+                    result()(row, col) = z()(rowPool, colPool);
+                }
+            }
+        }
+    }
+
     void operator()(const Pow& pow) const {
         result() = arma::pow(x(), pow.y);
     }
@@ -207,6 +232,7 @@ struct StatementExecutor {
     Matrix& result() const { return *writeRefResolver(stmt.result); }
     const Matrix& x() const { return *readRefResolver(stmt.args.at(0)); }
     const Matrix& y() const { return *readRefResolver(stmt.args.at(1)); }
+    const Matrix& z() const { return *readRefResolver(stmt.args.at(2)); }
 
     ReadRefResolver readRefResolver;
     WriteRefResolver writeRefResolver;
@@ -360,9 +386,7 @@ private:
                 [](auto ref) -> detail::ReadRef { return ref; }, ref);
     }
 
-    void fuseStatement(
-            const Expr* expr,
-            const detail::WriteRef& ref) {
+    void fuseStatement(const Expr* expr, const detail::WriteRef& ref) {
         StatementFuser fuser{expr->args};
         const auto op = mpark::visit(fuser, expr->op);
 
@@ -481,6 +505,14 @@ struct PrettyPrinter {
 
     void operator()(const Conv2D&) const {
         out << "conv2";
+    }
+
+    void operator()(const MaxPool& maxPool) const {
+        out << "maxPool<" << maxPool.rows << ", " << maxPool.rows << ">";
+    }
+
+    void operator()(const MaxPoolDiff& maxPool) const {
+        out << "maxPoolDiff<" << maxPool.rows << ", " << maxPool.rows << ">";
     }
 
     void operator()(const Pow& pow) {
