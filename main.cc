@@ -12,18 +12,21 @@
 
 class Builder {
 public:
-    explicit Builder(size_t inputSize, size_t miniBatchSize) :
-        input_(newTensor(inputSize, miniBatchSize)),
+    explicit Builder(const Shape& inputShape, size_t miniBatchSize) :
+        input_(newPlaceholder(inputShape.addDim(miniBatchSize))),
         output_(input_)
     {}
 
     void addFullyConnectedLayer(size_t size) {
-        bias_.push_back(newTensor(arma::randn<Col>(size)));
-        const size_t lastLayerSize = output_.shape().rows;
+        bias_.push_back(newTensor(TensorValue::randn({1, size})));
+        const size_t lastLayerSize = output_.shape().dropDim().size();
         weights_.push_back(newTensor(
-                arma::randn<Matrix>(size, lastLayerSize) /
-                std::sqrt(static_cast<float>(lastLayerSize))));
-        output_ = sigmoid(weights_.back() * output_ + bias_.back());
+                    TensorValue::randn(
+                        {lastLayerSize, size},
+                        1.0f / std::sqrt(static_cast<float>(lastLayerSize)))));
+        output_ = sigmoid(
+                output_.reshape({1, output_.shape().size()}) * weights_.back() +
+                bias_.back());
     }
 
     NN build() {
@@ -39,7 +42,7 @@ public:
 int main()
 {
     _MM_SET_EXCEPTION_MASK(_MM_GET_EXCEPTION_MASK() & ~_MM_MASK_INVALID);
-    Builder builder(28 * 28, 10);
+    Builder builder({1, 28 * 28}, 10);
     builder.addFullyConnectedLayer(100);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();

@@ -4,21 +4,21 @@
 
 #include "types.h"
 #include "shape.h"
+#include "tensor_value.h"
 
 enum class BinaryOperator {
     Plus,
-    Minus,
     Mul,
     HadamardMul,
     HadamardDiv
 };
 
 // Maybe the best ADT you can have in C++.
-struct Const { Matrix value; };
-struct Var { Matrix value;  };
+struct Const { TensorValue value; };
+struct Var { TensorValue value;  };
 struct Placeholder {};
-struct Tile { size_t repeatRows; size_t repeatCols; Shape originalShape; };
-struct Untile { size_t repeatRows; size_t repeatCols; Shape originalShape; };
+struct Tile { Shape multiplier; };
+struct Untile { Shape multiplier; };
 struct BinaryOp { BinaryOperator op; };
 struct Pow { float y; };
 struct Exp {};
@@ -26,13 +26,12 @@ struct Log {};
 struct Copy {};
 struct Negate {};
 struct Transpose {};
-struct Reshape { Shape shape; Shape originalShape; };
+struct Reshape {};
 struct Sigmoid {};
 struct HalfSumSquares {};
-struct Conv2D { size_t padTop; size_t padBottom; size_t padLeft; size_t padRight; };
 struct Reverse {};
-struct MaxPool { size_t rows; size_t cols; };
-struct MaxPoolDiff { size_t rows; size_t cols; };
+struct MaxPool { Shape pool; };
+struct MaxPoolDiff { Shape pool; };
 
 using Op = mpark::variant<
     Const,

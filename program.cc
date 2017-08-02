@@ -7,112 +7,94 @@ namespace {
 
 template <class ReadRefResolver, class WriteRefResolver>
 struct StatementExecutor {
-    void operator()(const Tile& tile) const {
-        result() = repmat(x(), tile.repeatRows, tile.repeatCols);
+    void operator()(const Tile& t) const {
+        tile(x(), t.multiplier, result());
+// FIXME
+#if 0
+        if (tile.multiplier.dim() != 2) {
+            throw std::logic_error(
+                    "Tile not implemented for shape " + tile.multiplier.toString());
+        }
+        result() = repmat(x(), tile.multiplier(0), tile.multiplier(1));
+#endif
     }
 
-    void operator()(const Untile& untile) const {
+    void operator()(const Untile& u) const {
+        untile(x(), u.multiplier, result());
+// FIXME
+#if 0
+        if (untile.multiplier.dim() != 2) {
+            throw std::logic_error(
+                    "Untile not implemented for shape " +
+                    untile.multiplier.toString());
+        }
         auto& r = result();
         const auto& tiled = x();
         r.fill(0.0f);
-        for (size_t i = 0; i != untile.repeatRows; ++i) {
-            const size_t beginRow = i * untile.originalShape.rows;
-            for (size_t j = 0; j != untile.repeatCols; ++j) {
-                const size_t beginCol = j * untile.originalShape.cols;
+        for (size_t i = 0; i != untile.multiplier(0); ++i) {
+            const size_t beginRow = i * untile.originalShape(0);
+            for (size_t j = 0; j != untile.multiplier(1); ++j) {
+                const size_t beginCol = j * untile.originalShape(1);
                 r += tiled.submat(
                         beginRow,
                         beginCol,
                         // Subtract one because the ranges are inclusive here.
-                        beginRow + untile.originalShape.rows - 1,
-                        beginCol + untile.originalShape.cols - 1);
+                        beginRow + untile.originalShape(0) - 1,
+                        beginCol + untile.originalShape(1) - 1);
             }
         }
+#endif
     }
 
     void operator()(const detail::FusedBinaryOp& binary) const {
-        makeTemplate(binary.xMod, x(), [&](auto&& xTemplate) {
-            makeTemplate(binary.yMod, y(), [&](auto&& yTemplate) {
-                dispatchBinaryOp(
-                        binary.op,
-                        std::move(xTemplate),
-                        std::move(yTemplate));
-            });
-        });
-    }
+        const auto& xMod = binary.xMod;
+        const auto& yMod = binary.yMod;
 
-    template <class Cont>
-    static void makeTemplate(
-            const detail::NegateTranspose& mod, const Matrix& arg, Cont cont) {
-        if (Shape{arg}.isScalar()) {
-            if (mod.negate) {
-                cont(-arg(0, 0));
-            } else {
-                cont(arg(0, 0));
-            }
-        } else if (!mod.transpose && !mod.negate) {
-            cont(arg);
-        } else if (!mod.transpose && mod.negate) {
-            cont(-arg);
-        } else if (mod.transpose && !mod.negate) {
-            cont(arg.t());
-        } else {
-            cont(-arg.t());
-        }
-    }
-
-    template <
-        class X,
-        class Y,
-        class = int,
-        class = typename std::enable_if<
-            std::is_same<float, typename std::decay<X>::type>::value ||
-            std::is_same<float, typename std::decay<Y>::type>::value>::type>
-    void dispatchBinaryOp(
-            BinaryOperator op, X&& x, Y&& y) const {
-        switch (op) {
+        switch (binary.op) {
             case BinaryOperator::Plus:
-                result() = x + y;
-                break;
-            case BinaryOperator::Minus:
-                result() = x - y;
+                add(
+                        x(),
+                        xMod.transpose,
+                        xMod.negate,
+                        y(),
+                        yMod.transpose,
+                        yMod.negate,
+                        result());
                 break;
             case BinaryOperator::Mul:
-            case BinaryOperator::HadamardMul:
-                result() = x * y;
-                break;
-            case BinaryOperator::HadamardDiv:
-                result() = x / y;
-                break;
-        }
-    }
-
-    template <
-        class X,
-        class Y,
-        class = typename std::enable_if<
-            !std::is_same<float, typename std::decay<X>::type>::value &&
-            !std::is_same<float, typename std::decay<Y>::type>::value>::type>
-    void dispatchBinaryOp(BinaryOperator op, X&& x, Y&& y) const {
-        switch (op) {
-            case BinaryOperator::Plus:
-                result() = x + y;
-                break;
-            case BinaryOperator::Minus:
-                result() = x - y;
-                break;
-            case BinaryOperator::Mul:
-                result() = x * y;
+                multiply(
+                        x(),
+                        xMod.transpose,
+                        y(),
+                        yMod.transpose,
+                        xMod.negate ^ yMod.negate,
+                        result());
                 break;
             case BinaryOperator::HadamardMul:
-                result() = x % y;
+                hadamard(
+                        x(),
+                        xMod.transpose,
+                        y(),
+                        yMod.transpose,
+                        xMod.negate ^ yMod.negate,
+                        result());
                 break;
             case BinaryOperator::HadamardDiv:
-                result() = x / y;
+                divide(
+                        x(),
+                        xMod.transpose,
+                        y(),
+                        yMod.transpose,
+                        xMod.negate ^ yMod.negate,
+                        result());
                 break;
         }
     }
 
     void operator()(const Conv2D& conv) const {
+        conv2d(x(), y(), conv, result());
+// FIXME
+#if 0
         const auto& a = x();
         const auto& k = y();
 
@@ -161,9 +143,13 @@ struct StatementExecutor {
                             lastKCol - 1));
             }
         }
+#endif
     }
 
-    void operator()(const MaxPool& maxPool) const {
+    void operator()(const MaxPool& m) const {
+        maxPool(x(), m.pool, result());
+// FIXME
+#if 0
         for (size_t row = 0; row != result().n_rows; ++row) {
             for (size_t col = 0; col != result().n_cols; ++col) {
                 result()(row, col) = x().submat(
@@ -173,9 +159,13 @@ struct StatementExecutor {
                         (col + 1) * maxPool.cols - 1).max();
             }
         }
+#endif
     }
 
-    void operator()(const MaxPoolDiff& maxPool) const {
+    void operator()(const MaxPoolDiff& m) const {
+        maxPoolDiff(x(), y(), z(), m.pool, result());
+// FIXME
+#if 0
         result().fill(0.0f);
         for (size_t row = 0; row != x().n_rows; ++row) {
             const size_t rowPool = row / maxPool.rows;
@@ -186,53 +176,68 @@ struct StatementExecutor {
                 }
             }
         }
+#endif
     }
 
-    void operator()(const Pow& pow) const {
-        result() = arma::pow(x(), pow.y);
+    void operator()(const Pow& p) const {
+        pow(x(), p.y, result());
     }
 
     void operator()(const Exp&) const {
-        result() = arma::exp(x());
+        exp(x(), result());
     }
 
     void operator()(const Log&) const {
-        result() = arma::log(x());
+        log(x(), result());
     }
 
     void operator()(const Copy&) const {
-        result() = x();
+        *result() = x();
     }
 
     void operator()(const Negate&) const {
-        result() = -x();
+        negate(x(), result());
     }
 
     void operator()(const Transpose&) const {
-        result() = x().t();
+        transpose(x(), result());
     }
 
     void operator()(const Reverse&) const {
+        reverse(x(), result());
+// FIXME
+#if 0
         result() = fliplr(flipud(x()));
+#endif
     }
 
-    void operator()(const Reshape& reshape) const {
+    void operator()(const Reshape&) const {
+        reshape(x(), result());
+// FIXME
+#if 0
         result() = x();
         result().reshape(reshape.shape.rows, reshape.shape.cols);
+#endif
     }
 
     void operator()(const Sigmoid&) const {
+// FIXME
+#if 0
         result() = 1.0f / (1.0f + exp(-x()));
+#endif
     }
 
     void operator()(const HalfSumSquares&) const {
-        result() = accu(square(x())) * 0.5f;
+// FIXME
+#if 0
+        result() = accu(pow(x(), 2)) * 0.5f;
+#endif
     }
 
-    Matrix& result() const { return *writeRefResolver(stmt.result); }
-    const Matrix& x() const { return *readRefResolver(stmt.args.at(0)); }
-    const Matrix& y() const { return *readRefResolver(stmt.args.at(1)); }
-    const Matrix& z() const { return *readRefResolver(stmt.args.at(2)); }
+    TensorValue* result() const { return writeRefResolver(stmt.result); }
+    const TensorValue& x() const { return *readRefResolver(stmt.args.at(0)); }
+    const TensorValue& y() const { return *readRefResolver(stmt.args.at(1)); }
+    const TensorValue& z() const { return *readRefResolver(stmt.args.at(2)); }
 
     ReadRefResolver readRefResolver;
     WriteRefResolver writeRefResolver;
@@ -242,9 +247,7 @@ struct StatementExecutor {
 struct StatementFuser {
     detail::VmOp operator()(const BinaryOp& binaryOp) {
         return detail::FusedBinaryOp{
-            binaryOp.op,
-            fuse(args.at(0)),
-            fuse(args.at(1))};
+            binaryOp.op, fuse(args.at(0)), fuse(args.at(1))};
     }
 
     template <class T>
@@ -299,13 +302,12 @@ public:
                         "All arguments in compile() must be placeholders");
             }
         }
-        result_.resize(targets_.size());
         for (size_t i = 0; i != targets_.size(); ++i) {
             const auto& target = targets_[i];
             exprToResultIndex_[target.unwrap().get()] = i;
             const auto shape = target.shape();
             // Preallocate result.
-            result_[i] = Matrix(shape.rows, shape.cols);
+            result_.push_back(TensorValue::zeros(shape));
         }
     }
 
@@ -323,7 +325,7 @@ public:
 
 private:
     // In the special case when function result is a value of consant,
-    // variable or function argument, we need co explicitly copy matrix
+    // variable or function argument, we need co explicitly copy tensor
     // to result location.
     detail::ReadRef addCopyStatement(
             const Expr* expr, const detail::ReadRef& ref) {
@@ -370,8 +372,8 @@ private:
         auto iter = exprToResultIndex_.find(expr.get());
         const auto ref = [&]() -> detail::WriteRef {
             if (iter == exprToResultIndex_.end()) {
-                // Allocate new matrix.
-                tmp_.emplace_back(shape.rows, shape.cols);
+                // Allocate new tensor.
+                tmp_.push_back(TensorValue::zeros(shape));
 
                 return detail::TmpRef{tmp_.size() - 1};
             } else {
@@ -403,8 +405,8 @@ private:
 
     std::unordered_map<const Expr*, detail::ReadRef> compiled_;
     std::vector<detail::Statement> program_;
-    std::vector<Matrix> tmp_;
-    std::vector<Matrix> result_;
+    std::vector<TensorValue> tmp_;
+    std::vector<TensorValue> result_;
     std::vector<std::shared_ptr<Expr>> retainer_;
 };
 
@@ -423,16 +425,16 @@ struct RefResolver {
     }
 
     Result operator()(const detail::VarRef& ref) const {
-        return ref.matrix;
+        return ref.value;
     }
 
     Result operator()(const detail::ConstRef& ref) const {
-        return ref.matrix;
+        return ref.value;
     }
 
-    const std::vector<const Matrix *>& args;
-    std::vector<Matrix>& result;
-    std::vector<Matrix>& tmp;
+    const std::vector<const TensorValue *>& args;
+    std::vector<TensorValue>& result;
+    std::vector<TensorValue>& tmp;
 };
 
 struct PrettyPrinter {
@@ -449,32 +451,29 @@ struct PrettyPrinter {
     }
 
     void operator()(const detail::VarRef& ref) const {
-        out << "var(" << ref.matrix << ")";
+        out << "var(" << ref.value << ")";
     }
 
     void operator()(const detail::ConstRef& ref) const {
-        if (Shape{*ref.matrix}.isScalar()) {
-            out << "const(" << (*ref.matrix)(0, 0) << ")";
+        if (ref.value->shape().isScalar()) {
+            out << "const(" << ref.value->asScalar() << ")";
         } else {
-            out << "const(" << ref.matrix << ")";
+            out << "const(" << ref.value << ")";
         }
     }
 
     void operator()(const Tile& tile) const {
-        out << "tile<" << tile.repeatRows << ", " << tile.repeatCols << ">";
+        out << "tile<" << tile.multiplier.toString() << ">";
     }
 
     void operator()(const Untile& untile) const {
-        out << "untile<" << untile.repeatRows << ", " << untile.repeatCols << ">";
+        out << "untile<" << untile.multiplier.toString() << ">";
     }
 
     void operator()(const detail::FusedBinaryOp& binary) const {
         switch (binary.op) {
             case BinaryOperator::Plus:
                 out << "+";
-                break;
-            case BinaryOperator::Minus:
-                out << "-";
                 break;
             case BinaryOperator::Mul:
                 out << "*";
@@ -508,11 +507,11 @@ struct PrettyPrinter {
     }
 
     void operator()(const MaxPool& maxPool) const {
-        out << "maxPool<" << maxPool.rows << ", " << maxPool.rows << ">";
+        out << "maxPool<" << maxPool.pool.toString() << ">";
     }
 
     void operator()(const MaxPoolDiff& maxPool) const {
-        out << "maxPoolDiff<" << maxPool.rows << ", " << maxPool.rows << ">";
+        out << "maxPoolDiff<" << maxPool.pool.toString() << ">";
     }
 
     void operator()(const Pow& pow) {
@@ -543,9 +542,8 @@ struct PrettyPrinter {
         out << "reverse";
     }
 
-    void operator()(const Reshape& reshape) {
-        out << "reshape<" << reshape.shape.rows << ", " <<
-            reshape.shape.cols << ">";
+    void operator()(const Reshape&) {
+        out << "reshape";
     }
 
     void operator()(const Sigmoid&) {
@@ -568,16 +566,16 @@ Program compile(
     return Compiler(targets, args).compile();
 }
 
-const std::vector<Matrix>& Program::operator()(
-        const std::vector<const Matrix*>& args) {
+const std::vector<TensorValue>& Program::operator()(
+        const std::vector<const TensorValue*>& args) {
     auto resolveRead = [&](const detail::ReadRef& ref) {
         return mpark::visit(
-                RefResolver<const Matrix *>{args, result_, tmp_},
+                RefResolver<const TensorValue *>{args, result_, tmp_},
                 ref);
     };
     auto resolveWrite = [&](const detail::WriteRef& ref) {
         return mpark::visit(
-                RefResolver<Matrix *>{args, result_, tmp_},
+                RefResolver<TensorValue *>{args, result_, tmp_},
                 ref);
     };
     for (auto& statement: program_) {

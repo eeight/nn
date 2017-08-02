@@ -18,7 +18,7 @@ public:
             std::vector<Tensor> bias,
             std::vector<Tensor> weights);
 
-    Matrix predict(const Matrix& input) const;
+    TensorValue predict(const TensorValue& input) const;
 
     void fit(
             std::vector<Sample> train,
@@ -28,14 +28,14 @@ public:
             LossFunction lossFunction,
             float lambda);
 
-    size_t inputSize() const { return input_.shape().rows; }
-    size_t outputSize() const { return output_.shape().rows; }
-    size_t miniBatchSize() const { return input_.shape().cols; }
+    Shape inputShape() const { return input_.shape().dropDim(); }
+    Shape outputShape() const { return output_.shape().dropDim(); }
+    size_t miniBatchSize() const { return input_.shape()(0); }
 
 public:
     void gradientStep(
-            const Matrix& input,
-            const Matrix& target,
+            const TensorValue& input,
+            const TensorValue& target,
             Program& dLoss, float eta);
 
     Tensor input_;

@@ -12,8 +12,8 @@ namespace detail {
 struct ArgRef { size_t index; };
 struct ResultRef { size_t index; };
 struct TmpRef { size_t index; };
-struct VarRef { const Matrix* matrix; };
-struct ConstRef { const Matrix* matrix; };
+struct VarRef { const TensorValue* value; };
+struct ConstRef { const TensorValue* value; };
 
 using ReadRef = mpark::variant<ArgRef, ResultRef, TmpRef, VarRef, ConstRef>;
 using WriteRef = mpark::variant<ResultRef, TmpRef>;
@@ -58,13 +58,13 @@ struct Statement {
 class Program {
 public:
     friend class ResolutionVisitor;
-    const std::vector<Matrix>& operator()(
-            const std::vector<const Matrix*>& args = {});
+    const std::vector<TensorValue>& operator()(
+            const std::vector<const TensorValue*>& args = {});
 
     Program(
             std::vector<detail::Statement> program,
-            std::vector<Matrix> tmp,
-            std::vector<Matrix> result,
+            std::vector<TensorValue> tmp,
+            std::vector<TensorValue> result,
             std::vector<std::shared_ptr<Expr>> retainer) :
         program_(std::move(program)),
         tmp_(std::move(tmp)),
@@ -77,8 +77,8 @@ public:
 private:
     std::vector<detail::Statement> program_;
     // TODO(eeight) reuse tmp space
-    std::vector<Matrix> tmp_;
-    std::vector<Matrix> result_;
+    std::vector<TensorValue> tmp_;
+    std::vector<TensorValue> result_;
     std::vector<std::shared_ptr<Expr>> retainer_;
 };
 

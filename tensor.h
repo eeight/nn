@@ -13,7 +13,7 @@ public:
     /* implicit */ Tensor(float x);
     ~Tensor();
 
-    Shape shape() const;
+    const Shape& shape() const;
 
     Tensor reshape(Shape shape) const;
     Tensor operator-() const;
@@ -21,6 +21,8 @@ public:
     Tensor t() const;
     // Reverse rows and columns order.
     Tensor r() const;
+
+    Tensor vectorize() const;
 
     bool isConst1() const;
 
@@ -30,17 +32,15 @@ private:
     std::shared_ptr<Expr> expr_;
 };
 
-void mutate(Tensor& t, const std::function<void (Matrix&)>& mutator);
+void mutate(Tensor& t, const std::function<void (TensorValue&)>& mutator);
 
 // Create placeholder variable. This variable can
 // be given value only at an argument of compiled function.
-Tensor newTensor(size_t rows, size_t cols);
-Tensor newTensor(Shape shape);
+Tensor newPlaceholder(const Shape& shape);
 
-// Create variable with given value. Its value can be mutated
-// by operators = and +=.
-Tensor newTensor(Matrix init);
-Tensor newConstTensor(Matrix init);
+// Create variable with given value.
+Tensor newTensor(TensorValue init);
+Tensor newConstTensor(TensorValue init);
 
 Tensor operator *(const Tensor& x, const Tensor& y);
 // Hadamard (Schur) product.
@@ -58,7 +58,7 @@ Tensor conv2d(
         const Tensor& k,
         const Conv2D& conv);
 
-Tensor maxPool(const Tensor& a, size_t rows, size_t cols);
+Tensor maxPool(const Tensor& a, Shape pool);
 
 // Computes x to the power of y.
 // x must be a scalar

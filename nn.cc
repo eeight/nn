@@ -36,7 +36,7 @@ float evaluate(
         samples,
         nn.miniBatchSize(),
         [&](const Matrix& batchInput, const Matrix& batchTarget) {
-            const auto output = nn.predict(batchInput);
+            const auto output = nn.predict(batchInput).asMatrix();
             for (size_t i = 0; i != batchTarget.n_cols; ++i) {
                 correct +=
                     maxIndex(output.col(i)) == maxIndex(batchTarget.col(i));
@@ -70,7 +70,7 @@ NN::NN(
     std::cout << "Eval: " << eval_;
 }
 
-Matrix NN::predict(const Matrix& input) const{
+TensorValue NN::predict(const TensorValue& input) const{
     return eval_({&input}).front();
 }
 
@@ -81,8 +81,8 @@ void NN::fit(
         float eta,
         LossFunction lossFunction,
         float lambda) {
-    auto target = newTensor(output_.shape());
-    Tensor regularizer = newTensor(arma::zeros<Matrix>(1, 1));
+    auto target = newPlaceholder(output_.shape());
+    Tensor regularizer = newTensor(TensorValue{0.0f});
     for (const auto& w: weights_) {
         regularizer = regularizer + halfSumSquares(w);
     }
@@ -99,7 +99,11 @@ void NN::fit(
             train,
             miniBatchSize(),
             [&](const Matrix& batchInput, const Matrix& batchTarget) {
-                gradientStep(batchInput, batchTarget, dLoss, eta);
+                gradientStep(
+                        TensorValue{batchInput},
+                        TensorValue{batchTarget},
+                        dLoss,
+                        eta);
             });
         const auto correctRatio = evaluate(*this, test);
         std::cout << "Epoch done: " << (epoch + 1) <<
@@ -109,15 +113,15 @@ void NN::fit(
 }
 
 void NN::gradientStep(
-        const Matrix& input,
-        const Matrix& target,
+        const TensorValue& input,
+        const TensorValue& target,
         Program& dLoss,
         float eta) {
     const auto& partial = dLoss({&input, &target});
 
     for (size_t i = 0; i != params_.size(); ++i) {
-        mutate(params_[i], [&](Matrix& param) {
-            param -= eta * partial[i];
+        mutate(params_[i], [&](TensorValue& param) {
+            addMultiply(partial[i], -eta, &param);
         });
     }
 }

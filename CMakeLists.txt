@@ -17,7 +17,9 @@ set(CMAKE_CXX_STANDARD 17)
 add_library(
     tensor
     ad.cc
+    error.cc
     program.cc
+    shape.cc
     tensor.cc)
 
 add_library(

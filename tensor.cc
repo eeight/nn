@@ -1,5 +1,6 @@
 #include "tensor.h"
 #include "ad.h"
+#include "error.h"
 
 #include <stdexcept>
 #include <string>
@@ -9,24 +10,30 @@
 namespace {
 
 std::shared_ptr<Expr> maybeTile(
-        const std::shared_ptr<Expr>& x, Shape shape, bool onlyScalar = false) {
-    const auto xShape = x->shape;
+        const std::shared_ptr<Expr>& x, const Shape& shape, bool onlyScalar = false) {
+    const auto& xShape = x->shape;
     if (xShape.isScalar()) {
         return x;
     } else if (onlyScalar) {
         return {};
     }
 
-    if (shape.rows % xShape.rows || shape.cols % xShape.cols) {
+    if (xShape.dim() != shape.dim()) {
         return {};
+    }
+
+    std::vector<size_t> multiplierDim;
+
+    for (size_t i = 0; i != shape.dim(); ++i) {
+        if (shape(i) % xShape(i)) {
+            return {};
+        }
+        multiplierDim.push_back(shape(i) / xShape(i));
     }
 
     return std::make_shared<Expr>(
             shape,
-            Tile{
-                shape.rows / xShape.rows,
-                shape.cols / xShape.cols,
-                xShape},
+            Tile{Shape{std::move(multiplierDim)}},
             x);
 }
 
@@ -45,9 +52,7 @@ Tensor binaryOpWithMatchingShapes(
         } else if (auto tiled = maybeTile(yExpr, xExpr->shape)) {
             yExpr = std::move(tiled);
         } else {
-            throw std::runtime_error(
-                    "Incompatible shapes in binary operator: " + xExpr->shape.toString() +
-                        " and " + yExpr->shape.toString());
+            requireCompatible(false, "binary operator", xExpr->shape, yExpr->shape);
         }
     }
     return Tensor(std::make_shared<Expr>(
@@ -77,22 +82,22 @@ Tensor::Tensor(float x) :
 
 Tensor::~Tensor() = default;
 
-Shape Tensor::shape() const {
+const Shape& Tensor::shape() const {
     return expr_->shape;
 }
 
 Tensor Tensor::reshape(Shape newShape) const {
-    if (newShape.size() != shape().size()) {
-        throw std::runtime_error(
-                "Incompatible shape in Tensor::reshape");
-    }
+    requireCompatible(
+            newShape.size() == shape().size(),
+            "reshape",
+            newShape,
+            shape());
     if (shape() == newShape) {
         return *this;
     } else if (shape().t() == newShape) {
         return t();
     } else {
-        return Tensor(std::make_shared<Expr>(
-                newShape, Reshape{newShape, shape()}, expr_));
+        return Tensor(std::make_shared<Expr>(newShape, Reshape{}, expr_));
     }
 }
 
@@ -120,13 +125,14 @@ Tensor Tensor::r() const {
 
 bool Tensor::isConst1() const {
     if (const auto konst = mpark::get_if<Const>(&expr_->op)) {
-        return Shape{konst->value}.isScalar() && konst->value(0, 0) == 1.0f;
+        return konst->value.shape().isScalar() &&
+            konst->value.asScalar() == 1.0f;
     } else {
         return false;
     }
 }
 
-void mutate(Tensor& tensor, const std::function<void (Matrix&)>& mutator) {
+void mutate(Tensor& tensor, const std::function<void (TensorValue&)>& mutator) {
     auto var = mpark::get_if<Var>(&tensor.unwrap()->op);
     if (!var) {
         throw std::runtime_error("Cannot mutate a non-variable");
@@ -134,22 +140,18 @@ void mutate(Tensor& tensor, const std::function<void (Matrix&)>& mutator) {
     mutator(var->value);
 }
 
-Tensor newTensor(size_t rows, size_t cols) {
-    return newTensor(Shape{rows, cols});
-}
-
-Tensor newTensor(Shape shape) {
+Tensor newPlaceholder(const Shape& shape) {
     return Tensor(std::make_shared<Expr>(shape, Placeholder{}));
 }
 
-Tensor newTensor(Matrix init) {
-    const Shape shape{init};
+Tensor newTensor(TensorValue init) {
+    const auto shape = init.shape();
     return Tensor(std::make_shared<Expr>(
                 shape, Var{std::move(init)}));
 }
 
-Tensor newConstTensor(Matrix init) {
-    const Shape shape{init};
+Tensor newConstTensor(TensorValue init) {
+    const auto shape = init.shape();
     return Tensor(std::make_shared<Expr>(
                 shape, Const{std::move(init)}));
 }
@@ -159,7 +161,7 @@ Tensor operator +(const Tensor& x, const Tensor& y) {
 }
 
 Tensor operator -(const Tensor& x, const Tensor& y) {
-    return binaryOpWithMatchingShapes(BinaryOperator::Minus, x, y);
+    return binaryOpWithMatchingShapes(BinaryOperator::Plus, x, -y);
 }
 
 Tensor operator %(const Tensor& x, const Tensor& y) {
@@ -183,7 +185,10 @@ Tensor operator /(const Tensor& x, const Tensor& y) {
 Tensor operator *(const Tensor& x, const Tensor& y) {
     const auto& xExpr = x.unwrap();
     const auto& yExpr = y.unwrap();
-    if (xExpr->shape.cols != yExpr->shape.rows) {
+
+    if (!xExpr->shape.isMatrix() ||
+            !yExpr->shape.isMatrix() ||
+            xExpr->shape(1) != yExpr->shape(0)) {
         if (auto tiledX = maybeTileScalar(xExpr, yExpr->shape)) {
             return Tensor(std::move(tiledX)) % y;
         } else if (auto tiledY = maybeTileScalar(yExpr, xExpr->shape)) {
@@ -199,8 +204,8 @@ Tensor operator *(const Tensor& x, const Tensor& y) {
 
 Tensor conv2d(const Tensor& a, const Tensor& k, bool sameSize) {
     if (sameSize) {
-        const size_t kRows = k.shape().rows;
-        const size_t kCols = k.shape().cols;
+        const size_t kRows = k.shape()(0);
+        const size_t kCols = k.shape()(1);
         return conv2d(a, k, {
                 /* padTop = */ kRows / 2,
                 /* padBottom = */ (kRows - 1) / 2,
@@ -215,27 +220,32 @@ Tensor conv2d(
         const Tensor& a,
         const Tensor& k,
         const Conv2D& conv) {
+    const size_t aRows = a.shape()(0);
+    const size_t aCols = a.shape()(1);
+    const size_t kRows = k.shape()(0);
+    const size_t kCols = k.shape()(1);
     return Tensor(std::make_shared<Expr>(
                 Shape{
-                    a.shape().rows + conv.padTop + conv.padBottom + 1 -
-                        k.shape().rows,
-                    a.shape().cols + conv.padLeft + conv.padRight + 1 -
-                        k.shape().cols},
+                    aRows + conv.padTop + conv.padBottom + 1 - kRows,
+                    aCols + conv.padLeft + conv.padRight + 1 - kCols},
                 conv,
                 a.unwrap(),
                 k.unwrap()));
 }
 
-Tensor maxPool(const Tensor& a, size_t rows, size_t cols) {
-    if (a.shape().rows % rows || a.shape().cols % cols) {
-        throw std::logic_error(
-                "Matrix with shape " + a.shape().toString() +
-                " is not compatible with max pool with shape " +
-                Shape{rows, cols}.toString());
+Tensor maxPool(const Tensor& a, Shape pool) {
+    requireCompatible(
+            a.shape().dim() == pool.dim(), "maxPool", a.shape(), pool);
+
+    std::vector<size_t> dim;
+    for (size_t i = 0; i != pool.dim(); ++i) {
+        requireCompatible(
+                a.shape()(i) % pool(i) == 0, "maxPool", a.shape(), pool);
+        dim.push_back(a.shape()(i) / pool(i));
     }
     return Tensor(std::make_shared<Expr>(
-                Shape{a.shape().rows / rows, a.shape().cols / cols},
-                MaxPool{rows, cols},
+                Shape{std::move(dim)},
+                MaxPool{std::move(pool)},
                 a.unwrap()));
 }
 
@@ -273,5 +283,5 @@ Tensor halfSumSquares(const Tensor& tensor) {
 Tensor sum(const Tensor& tensor) {
     size_t size = tensor.shape().size();
     return tensor.reshape({1, size}) *
-        newConstTensor(arma::ones<Matrix>(size, 1));
+        newConstTensor(TensorValue::ones({size, 1}));
 }

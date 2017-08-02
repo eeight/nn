@@ -5,49 +5,59 @@
 #include <cstddef>
 #include <string>
 
-struct Shape {
+class Shape {
+public:
+    explicit Shape(std::vector<size_t> dim) :
+        dim_(std::move(dim))
+    {}
+
     explicit Shape(const Matrix& matrix) :
-        rows(matrix.n_rows), cols(matrix.n_cols)
+        Shape({matrix.n_rows, matrix.n_cols})
     {}
 
-    Shape(size_t rows, size_t cols) :
-        rows(rows), cols(cols)
+    Shape(std::initializer_list<size_t> dim) :
+        dim_{dim}
     {}
 
-    bool operator ==(Shape other) const {
-        return rows == other.rows && cols == other.cols;
+    size_t dim() const { return dim_.size(); }
+
+    size_t operator()(size_t i) const { return dim_.at(i); }
+
+    bool operator ==(const Shape& other) const {
+        return dim_ == other.dim_;
     }
 
-    bool operator !=(Shape other) const {
+    bool operator !=(const Shape& other) const {
         return !(*this == other);
     }
 
-    Shape operator *(Shape other) const {
-        if (cols != other.rows) {
-            throw std::runtime_error(
-                    "Incompatible shapes for matrix multiplication");
-        }
+    Shape operator *(const Shape& other) const;
 
-        return {rows, other.cols};
-    }
-
-    Shape t() const {
-        return {cols, rows};
-    }
-
-    size_t size() const {
-        return cols * rows;
-    }
+    Shape t() const;
+    size_t size() const;
 
     bool isScalar() const {
-        return rows == 1 && cols == 1;
+        return dim_.empty();
     }
 
-    std::string toString() const {
-        return "(" + std::to_string(rows) + ", " + std::to_string(cols) + ")";
+    bool isVector() const {
+        return dim_.size() == 1;
     }
 
-    size_t rows;
-    size_t cols;
+    bool isMatrix() const {
+        return dim_.size() == 2;
+    }
+
+    bool isCube() const {
+        return dim_.size() == 3;
+    }
+
+    Shape addDim(size_t size) const;
+    Shape dropDim() const;
+
+    std::string toString() const;
+
+private:
+    std::vector<size_t> dim_;
 };
 

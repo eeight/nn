@@ -9,24 +9,12 @@ namespace {
 struct PartialDiff {
     Tensor operator()(const Tile& tile) const {
         return Tensor(std::make_shared<Expr>(
-            tile.originalShape,
-            Untile{
-                tile.repeatRows,
-                tile.repeatCols,
-                tile.originalShape},
-            selfPartial.unwrap()));
+            xShape(), Untile{tile.multiplier}, selfPartial.unwrap()));
     }
 
     Tensor operator()(const Untile& untile) const {
         return Tensor(std::make_shared<Expr>(
-            Shape{
-                untile.originalShape.rows * untile.repeatRows,
-                untile.originalShape.cols * untile.repeatCols},
-            Tile{
-                untile.repeatRows,
-                untile.repeatCols,
-                untile.originalShape},
-            selfPartial.unwrap()));
+            xShape(), Tile{untile.multiplier}, selfPartial.unwrap()));
     }
 
     Tensor operator()(const BinaryOp& binaryOp) const {
@@ -34,20 +22,13 @@ struct PartialDiff {
             case BinaryOperator::Plus:
                 return selfPartial;
 
-            case BinaryOperator::Minus:
-                if (arg == 0) {
-                    return selfPartial;
-                } else {
-                    return -selfPartial;
-                }
-
             case BinaryOperator::Mul:
                 if (arg == 0) {
                     return selfPartial * y().t();
                 } else {
                     return x().t() * selfPartial;
-
                 }
+
             case BinaryOperator::HadamardMul:
                 if (arg == 0) {
                     return y() % selfPartial;
@@ -69,8 +50,8 @@ struct PartialDiff {
         const auto& a = x();
         const auto& k = y();
 
-        const size_t kRows = k.shape().rows;
-        const size_t kCols = k.shape().cols;
+        const size_t kRows = k.shape()(0);
+        const size_t kCols = k.shape()(1);
 
         if (arg == 0) {
             return conv2d(selfPartial, k.r(), {
@@ -85,8 +66,8 @@ struct PartialDiff {
 
     Tensor operator()(const MaxPool& maxPool) const {
         return Tensor(std::make_shared<Expr>(
-                x().shape(),
-                MaxPoolDiff{maxPool.rows, maxPool.cols},
+                xShape(),
+                MaxPoolDiff{maxPool.pool},
                 x().unwrap(),
                 self.unwrap(),
                 selfPartial.unwrap()));
@@ -122,8 +103,8 @@ struct PartialDiff {
         return selfPartial.r();
     }
 
-    Tensor operator()(const Reshape& reshape) const {
-        return selfPartial.reshape(reshape.originalShape);
+    Tensor operator()(const Reshape&) const {
+        return selfPartial.reshape(xShape());
     }
 
     Tensor operator()(const Sigmoid&) const {
@@ -139,6 +120,8 @@ struct PartialDiff {
         throw std::logic_error("Unexpected op in PartialDiff");
     }
 
+    const Shape& xShape() const { return args.at(0)->shape; }
+    const Shape& yShape() const { return args.at(1)->shape; }
     Tensor x() const { return Tensor(args.at(0)); }
     Tensor y() const { return Tensor(args.at(1)); }
 
@@ -155,9 +138,7 @@ public:
             throw std::logic_error("Cannot differentiate a non-scalar value");
         }
         trace(tensor.unwrap());
-        partial_.emplace(
-                tensor.unwrap().get(),
-                newConstTensor(arma::ones<Matrix>(1, 1)));
+        partial_.emplace(tensor.unwrap().get(), newConstTensor(1.0f));
     }
 
     void trace(const std::shared_ptr<Expr>& expr) {
@@ -195,13 +176,8 @@ private:
         const auto iter = reverseDeps_.find(expr);
         if (iter == reverseDeps_.end()) {
             // Result does not even depend on this expression.
-
-            auto result = newConstTensor(
-                    arma::zeros<Matrix>(
-                        expr->shape.rows,
-                        expr->shape.cols));
-            partial_.emplace(expr, result);
-            return result;
+            // FIXME(eeight)
+            throw std::logic_error("partial: Not implemented");
         }
 
         const auto& parents = iter->second;

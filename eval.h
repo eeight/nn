@@ -4,9 +4,9 @@
 
 #include <utility>
 
-inline Matrix eval(
+inline TensorValue eval(
         const Tensor& expr,
         const std::vector<Tensor>& args = {},
-        const std::vector<const Matrix *>& givens = {}) {
+        const std::vector<const TensorValue *>& givens = {}) {
     return compile({expr}, args)(givens).front();
 }
