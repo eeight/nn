@@ -20,7 +20,8 @@ add_library(
     error.cc
     program.cc
     shape.cc
-    tensor.cc)
+    tensor.cc
+    tensor_value.cc)
 
 add_library(
     nn

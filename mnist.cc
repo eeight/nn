@@ -35,7 +35,7 @@ std::vector<int> readLabels(const std::string& path) {
     return labels;
 }
 
-std::vector<Col> read(const std::string& path) {
+std::vector<Row> read(const std::string& path) {
     std::ifstream in(path);
     if (!in) {
         throw std::runtime_error("Cannot open " + path);
@@ -44,7 +44,7 @@ std::vector<Col> read(const std::string& path) {
     if (nextInt(in) != 2051) {
         throw std::runtime_error("Unexpected magic in labels file");
     }
-    std::vector<Col> images(nextInt(in));
+    std::vector<Row> images(nextInt(in));
     const size_t rows = nextInt(in);
     const size_t cols = nextInt(in);
     std::vector<unsigned char> bytes(cols * rows);
@@ -62,13 +62,13 @@ std::vector<Col> read(const std::string& path) {
     return images;
 }
 
-Col oneHot(size_t size, size_t i) {
-    Col row(size, arma::fill::zeros);
+Row oneHot(size_t size, size_t i) {
+    Row row(size, arma::fill::zeros);
     row(i) = 1.0f;
     return row;
 }
 
-std::vector<Sample> zip(std::vector<Col> xs, const std::vector<int>& ys) {
+std::vector<Sample> zip(std::vector<Row> xs, const std::vector<int>& ys) {
     std::vector<Sample> result;
     result.reserve(xs.size());
 

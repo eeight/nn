@@ -46,23 +46,20 @@ Tensor binaryOpWithMatchingShapes(
         BinaryOperator op, const Tensor& x, const Tensor& y) {
     auto xExpr = x.unwrap();
     auto yExpr = y.unwrap();
+    Shape shape = xExpr->shape;
     if (xExpr->shape != yExpr->shape) {
         if (auto tiled = maybeTile(xExpr, yExpr->shape)) {
+            shape = yExpr->shape;
             xExpr = std::move(tiled);
         } else if (auto tiled = maybeTile(yExpr, xExpr->shape)) {
+            shape = xExpr->shape;
             yExpr = std::move(tiled);
         } else {
             requireCompatible(false, "binary operator", xExpr->shape, yExpr->shape);
         }
     }
     return Tensor(std::make_shared<Expr>(
-            xExpr->shape, BinaryOp{op}, xExpr, yExpr));
-}
-
-Matrix make11(float x) {
-    Matrix result(1, 1);
-    result.fill(x);
-    return result;
+            std::move(shape), BinaryOp{op}, xExpr, yExpr));
 }
 
 Tensor makeShapePreservingMutator(const Tensor& x, Op mutator) {
@@ -77,7 +74,7 @@ Tensor::Tensor(std::shared_ptr<Expr> expr) :
 {}
 
 Tensor::Tensor(float x) :
-    expr_(std::make_shared<Expr>(Shape{1, 1}, Const{make11(x)}))
+    expr_(std::make_shared<Expr>(Shape{}, Const{x}))
 {}
 
 Tensor::~Tensor() = default;
@@ -275,13 +272,13 @@ Tensor sigmoid(const Tensor& x) {
 
 Tensor halfSumSquares(const Tensor& tensor) {
     return Tensor(std::make_shared<Expr>(
-        Shape{1, 1},
+        Shape{},
         HalfSumSquares{},
         tensor.unwrap()));
 }
 
 Tensor sum(const Tensor& tensor) {
     size_t size = tensor.shape().size();
-    return tensor.reshape({1, size}) *
-        newConstTensor(TensorValue::ones({size, 1}));
+    return (tensor.reshape({1, size}) *
+        newConstTensor(TensorValue::ones({size, 1}))).reshape({});
 }

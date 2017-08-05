@@ -134,7 +134,7 @@ struct PartialDiff {
 class Ad {
 public:
     explicit Ad(const Tensor& tensor) {
-        if (!tensor.shape().isScalar()) {
+        if (tensor.shape().size() != 1) {
             throw std::logic_error("Cannot differentiate a non-scalar value");
         }
         trace(tensor.unwrap());

@@ -7,7 +7,7 @@
 
 Shape Shape::operator *(const Shape& other) const {
     requireCompatible(
-            isMatrix() && other.isMatrix() && dim_[1] != other(0),
+            isMatrix() && other.isMatrix() && dim_[1] == other(0),
             "matrix multiplication",
             *this, other);
 

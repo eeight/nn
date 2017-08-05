@@ -3,6 +3,6 @@
 #include "types.h"
 
 struct Sample {
-    Col x;
-    Col y;
+    Row x;
+    Row y;
 };

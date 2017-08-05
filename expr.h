@@ -57,7 +57,7 @@ using Op = mpark::variant<
 struct Expr {
     template <class Op, class... Args>
     Expr(Shape shape, Op op, Args... args) :
-        shape(shape), op(std::move(op)), args{std::move(args)...}
+        shape(std::move(shape)), op(std::move(op)), args{std::move(args)...}
     {}
 
     Shape shape;

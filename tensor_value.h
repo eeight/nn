@@ -3,22 +3,32 @@
 #include "shape.h"
 #include "types.h"
 
+#include <mpark/variant.hpp>
+
 struct Conv2D { size_t padTop; size_t padBottom; size_t padLeft; size_t padRight; };
 
 class TensorValue {
 public:
-    TensorValue(float x);
-    TensorValue(Matrix m);
-    TensorValue(Cube c);
+    /* implicit */ TensorValue(float x);
+    /* implicit */ TensorValue(Matrix m);
+    /* implicit */ TensorValue(Cube c);
     Shape shape() const;
 
     static TensorValue zeros(const Shape& shape);
     static TensorValue ones(const Shape& shape);
     static TensorValue randn(const Shape& shape, float stddev = 1.0f);
+    static TensorValue randu(const Shape& shape);
 
-    float asScalar() const;
+    float toScalar() const;
+    const float& asScalar() const;
     const Matrix& asMatrix() const;
     const Cube& asCube() const;
+
+    float& asScalar();
+    Matrix& asMatrix();
+    Cube& asCube();
+
+    const mpark::variant<float, Matrix, Cube>& value() const { return value_; }
 
 private:
     mpark::variant<float, Matrix, Cube> value_;
@@ -68,12 +78,12 @@ float accu(const TensorValue& x);
 
 // y += factor * x
 void addMultiply(
-        const TensorValue& x,
-        float factor,
-        TensorValue* y);
+        const TensorValue& x, float factor, TensorValue* y);
 
-void tile(const TensorValue& x, const Shape& multipler, TensorValue* y);
-void untile(const TensorValue& x, const Shape& multipler, TensorValue* y);
+void tile(const TensorValue& x, const Shape& multiplier, TensorValue* y);
+void untile(const TensorValue& x, const Shape& multiplier, TensorValue* y);
+void sigmoid(const TensorValue& x, TensorValue* result);
+void halfSumSquares(const TensorValue& x, TensorValue* result);
 void conv2d(
         const TensorValue& a,
         const TensorValue& k,

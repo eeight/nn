@@ -9,41 +9,10 @@ template <class ReadRefResolver, class WriteRefResolver>
 struct StatementExecutor {
     void operator()(const Tile& t) const {
         tile(x(), t.multiplier, result());
-// FIXME
-#if 0
-        if (tile.multiplier.dim() != 2) {
-            throw std::logic_error(
-                    "Tile not implemented for shape " + tile.multiplier.toString());
-        }
-        result() = repmat(x(), tile.multiplier(0), tile.multiplier(1));
-#endif
     }
 
     void operator()(const Untile& u) const {
         untile(x(), u.multiplier, result());
-// FIXME
-#if 0
-        if (untile.multiplier.dim() != 2) {
-            throw std::logic_error(
-                    "Untile not implemented for shape " +
-                    untile.multiplier.toString());
-        }
-        auto& r = result();
-        const auto& tiled = x();
-        r.fill(0.0f);
-        for (size_t i = 0; i != untile.multiplier(0); ++i) {
-            const size_t beginRow = i * untile.originalShape(0);
-            for (size_t j = 0; j != untile.multiplier(1); ++j) {
-                const size_t beginCol = j * untile.originalShape(1);
-                r += tiled.submat(
-                        beginRow,
-                        beginCol,
-                        // Subtract one because the ranges are inclusive here.
-                        beginRow + untile.originalShape(0) - 1,
-                        beginCol + untile.originalShape(1) - 1);
-            }
-        }
-#endif
     }
 
     void operator()(const detail::FusedBinaryOp& binary) const {
@@ -93,90 +62,14 @@ struct StatementExecutor {
 
     void operator()(const Conv2D& conv) const {
         conv2d(x(), y(), conv, result());
-// FIXME
-#if 0
-        const auto& a = x();
-        const auto& k = y();
-
-        const size_t kRows = k.n_rows;
-        const size_t kCols = k.n_cols;
-
-        for (size_t row = 0; row < result().n_rows; ++row) {
-            for (size_t col = 0; col < result().n_cols; ++col) {
-                int firstARow = (int)row - conv.padTop;
-                int lastARow = firstARow + kRows;
-                int firstACol = (int)col - conv.padLeft;
-                int lastACol = firstACol + kCols;
-
-                int firstKRow = 0;
-                int lastKRow = kRows;
-                int firstKCol = 0;
-                int lastKCol = kCols;
-
-                if (firstARow < 0) {
-                    firstKRow = -firstARow;
-                    firstARow = 0;
-                }
-                if (lastARow > (int)a.n_rows) {
-                    lastKRow -= lastARow - a.n_rows;
-                    lastARow = a.n_rows;
-                }
-                if (firstACol < 0) {
-                    firstKCol = -firstACol;
-                    firstACol = 0;
-                }
-                if (lastACol > (int)a.n_cols) {
-                    lastKCol -= lastACol - a.n_cols;
-                    lastACol = a.n_cols;
-                }
-                result()(row, col) = dot(
-                        a.submat(
-                            firstARow,
-                            firstACol,
-                            // The ranges are inclusive, so subtract one.
-                            lastARow - 1,
-                            lastACol - 1),
-                        k.submat(
-                            firstKRow,
-                            firstKCol,
-                            lastKRow - 1,
-                            lastKCol - 1));
-            }
-        }
-#endif
     }
 
     void operator()(const MaxPool& m) const {
         maxPool(x(), m.pool, result());
-// FIXME
-#if 0
-        for (size_t row = 0; row != result().n_rows; ++row) {
-            for (size_t col = 0; col != result().n_cols; ++col) {
-                result()(row, col) = x().submat(
-                        row * maxPool.rows,
-                        col * maxPool.cols,
-                        (row + 1) * maxPool.rows - 1,
-                        (col + 1) * maxPool.cols - 1).max();
-            }
-        }
-#endif
     }
 
     void operator()(const MaxPoolDiff& m) const {
         maxPoolDiff(x(), y(), z(), m.pool, result());
-// FIXME
-#if 0
-        result().fill(0.0f);
-        for (size_t row = 0; row != x().n_rows; ++row) {
-            const size_t rowPool = row / maxPool.rows;
-            for (size_t col = 0; col != x().n_cols; ++col) {
-                const size_t colPool = col / maxPool.cols;
-                if (x()(row, col) == y()(rowPool, colPool)) {
-                    result()(row, col) = z()(rowPool, colPool);
-                }
-            }
-        }
-#endif
     }
 
     void operator()(const Pow& p) const {
@@ -205,33 +98,18 @@ struct StatementExecutor {
 
     void operator()(const Reverse&) const {
         reverse(x(), result());
-// FIXME
-#if 0
-        result() = fliplr(flipud(x()));
-#endif
     }
 
     void operator()(const Reshape&) const {
         reshape(x(), result());
-// FIXME
-#if 0
-        result() = x();
-        result().reshape(reshape.shape.rows, reshape.shape.cols);
-#endif
     }
 
     void operator()(const Sigmoid&) const {
-// FIXME
-#if 0
-        result() = 1.0f / (1.0f + exp(-x()));
-#endif
+        sigmoid(x(), result());
     }
 
     void operator()(const HalfSumSquares&) const {
-// FIXME
-#if 0
-        result() = accu(pow(x(), 2)) * 0.5f;
-#endif
+        halfSumSquares(x(), result());
     }
 
     TensorValue* result() const { return writeRefResolver(stmt.result); }
@@ -307,6 +185,7 @@ public:
             exprToResultIndex_[target.unwrap().get()] = i;
             const auto shape = target.shape();
             // Preallocate result.
+            //std::cerr << "Allocate result: " << shape.toString() << '\n';
             result_.push_back(TensorValue::zeros(shape));
         }
     }
@@ -578,7 +457,21 @@ const std::vector<TensorValue>& Program::operator()(
                 RefResolver<TensorValue *>{args, result_, tmp_},
                 ref);
     };
+    //PrettyPrinter pp{std::cerr};
     for (auto& statement: program_) {
+        const auto& s = statement;
+        //std::cerr << "execute: ";
+        //mpark::visit(pp, s.result);
+        //std::cerr << " = ";
+        //mpark::visit(pp, s.op);
+        //std::cerr << "(";
+        for (size_t i = 0; i != s.args.size(); ++i) {
+            if (i != 0) {
+                //std::cerr << ", ";
+            }
+            //mpark::visit(pp, s.args[i]);
+        }
+        //std::cerr << ");\n";
         mpark::visit(
                 StatementExecutor<
                     decltype(resolveRead),

@@ -4,7 +4,7 @@
 
 namespace {
 
-size_t maxIndex(const Col& row) {
+size_t maxIndex(const Row& row) {
     return std::max_element(row.begin(), row.end()) - row.begin();
 }
 
@@ -13,15 +13,15 @@ void forEachBatch(
         const std::vector<Sample>& samples,
         size_t batchSize,
         F f) {
-    const size_t inputSize = samples.front().x.n_rows;
-    const size_t outputSize = samples.front().y.n_rows;
+    const size_t inputSize = samples.front().x.n_cols;
+    const size_t outputSize = samples.front().y.n_cols;
 
     for (size_t i = 0; i + batchSize <= samples.size(); i += batchSize) {
-        Matrix batchInput(inputSize, batchSize);
-        Matrix batchTarget(outputSize, batchSize);
+        Matrix batchInput(batchSize, inputSize);
+        Matrix batchTarget(batchSize, outputSize);
         for (size_t j = 0; j != batchSize; ++j) {
-            batchInput.col(j) = samples[i + j].x;
-            batchTarget.col(j) = samples[i + j].y;
+            batchInput.row(j) = samples[i + j].x;
+            batchTarget.row(j) = samples[i + j].y;
         }
 
         f(batchInput, batchTarget);
@@ -37,9 +37,9 @@ float evaluate(
         nn.miniBatchSize(),
         [&](const Matrix& batchInput, const Matrix& batchTarget) {
             const auto output = nn.predict(batchInput).asMatrix();
-            for (size_t i = 0; i != batchTarget.n_cols; ++i) {
+            for (size_t i = 0; i != batchTarget.n_rows; ++i) {
                 correct +=
-                    maxIndex(output.col(i)) == maxIndex(batchTarget.col(i));
+                    maxIndex(output.row(i)) == maxIndex(batchTarget.row(i));
                 ++total;
             }
         });
