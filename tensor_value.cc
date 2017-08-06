@@ -99,14 +99,14 @@ const float& TensorValue::operator()(size_t i, size_t j) const {
     if (shape_.dim() != 2) {
         throw std::logic_error("Not a matrix, shape = " + shape_.toString());
     }
-    return data_.at(i * shape_(0) + j);
+    return data_.at(i * shape_(1) + j);
 }
 
 const float& TensorValue::operator()(size_t i, size_t j, size_t k) const {
     if (shape_.dim() != 3) {
         throw std::logic_error("Not a cube, shape = " + shape_.toString());
     }
-    return data_.at((i * shape_(0) + j) * shape_(1) + k);
+    return data_.at((i * shape_(1) + j) * shape_(2) + k);
 }
 
 const float& TensorValue::operator()(const std::vector<size_t> &indices) const {
@@ -115,13 +115,10 @@ const float& TensorValue::operator()(const std::vector<size_t> &indices) const {
                 "Unexpected number of indices: " + std::to_string(indices.size()) +
                 " for shape " + shape_.toString() );
     }
-    if (indices.empty()) {
-        return data_.front();
-    }
 
-    size_t index = indices.front();
-    for (size_t i = 1; i != indices.size(); ++i) {
-        index = index * shape_(i - 1) + indices[i];
+    size_t index = 0;
+    for (size_t i = 0; i != indices.size(); ++i) {
+        index = index * shape_(i) + indices[i];
     }
 
     return data_.at(index);
@@ -290,15 +287,17 @@ void tile(const TensorValue& x, const Shape& multiplier, TensorValue* y) {
     std::vector<size_t> xIndices(multiplier.dim());
     const size_t size = y->shape().size();
     for (size_t i = 0; i != size; ++i) {
-        size_t j = 0;
-        for (; indices[j] == y->shape()(j) - 1; ++j) {
-            indices[j] = 0;
-        }
-        ++indices[j];
         for (size_t j = 0; j != xIndices.size(); ++j) {
-            xIndices[j] = indices[j] % multiplier(j);
+            xIndices[j] = indices[j] % x.shape()(j);
         }
         (*y)(indices) = x(xIndices);
+        if (i + 1 != size) {
+            size_t j = 0;
+            for (; indices[j] == y->shape()(j) - 1; ++j) {
+                indices[j] = 0;
+            }
+            ++indices[j];
+        }
     }
 }
 
@@ -308,15 +307,17 @@ void untile(const TensorValue& x, const Shape& multiplier, TensorValue* y) {
     const size_t size = x.shape().size();
     std::fill(y->data(), y->dataEnd(), 0.0f);
     for (size_t i = 0; i != size; ++i) {
-        size_t j = 0;
-        for (; indices[j] == y->shape()(j) - 1; ++j) {
-            indices[j] = 0;
-        }
-        ++indices[j];
         for (size_t j = 0; j != yIndices.size(); ++j) {
-            yIndices[j] = indices[j] % multiplier(j);
+            yIndices[j] = indices[j] % y->shape()(j);
         }
         (*y)(yIndices) += x(indices);
+        if (i + 1 != size) {
+            size_t j = 0;
+            for (; indices[j] == x.shape()(j) - 1; ++j) {
+                indices[j] = 0;
+            }
+            ++indices[j];
+        }
     }
 }
 

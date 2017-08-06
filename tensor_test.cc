@@ -184,3 +184,21 @@ BOOST_AUTO_TEST_CASE(convolution) {
 
     BOOST_TEST(improvements > 0.8 * n);
 }
+
+BOOST_AUTO_TEST_CASE(tile_test) {
+    auto x = TensorValue::zeros({1, 2});
+    x(0, 0) = 1;
+    x(0, 1) = 2;
+
+    auto y = TensorValue::zeros({3, 4});
+    tile(x, {3, 2}, &y);
+    for (size_t i = 0; i != 3; ++i) {
+        BOOST_TEST(y(i, 0) == 1);
+        BOOST_TEST(y(i, 1) == 2);
+        BOOST_TEST(y(i, 2) == 1);
+        BOOST_TEST(y(i, 3) == 2);
+    }
+    untile(y, {3, 2}, &x);
+    BOOST_TEST(x(0, 0) == 6);
+    BOOST_TEST(x(0, 1) == 12);
+}
