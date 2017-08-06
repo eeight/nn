@@ -15,8 +15,8 @@ void forEachBatch(
         const std::vector<Sample>& samples,
         size_t batchSize,
         F f) {
-    const size_t inputSize = samples.front().x.shape()(1);
-    const size_t outputSize = samples.front().y.shape()(1);
+    const size_t inputSize = samples.front().x.shape()(0);
+    const size_t outputSize = samples.front().y.shape()(0);
 
     for (size_t i = 0; i + batchSize <= samples.size(); i += batchSize) {
         auto batchInput = TensorValue::zeros({batchSize, inputSize});

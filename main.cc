@@ -19,12 +19,13 @@ public:
     void addFullyConnectedLayer(size_t size) {
         bias_.push_back(newTensor(TensorValue::randn({1, size})));
         const size_t lastLayerSize = output_.shape().dropDim().size();
+        const size_t miniBatchSize = input_.shape()(0);
         weights_.push_back(newTensor(
                     TensorValue::randn(
                         {lastLayerSize, size},
                         1.0f / std::sqrt(static_cast<float>(lastLayerSize)))));
         output_ = sigmoid(
-                output_.reshape({1, output_.shape().size()}) * weights_.back() +
+                output_.reshape({miniBatchSize, lastLayerSize}) * weights_.back() +
                 bias_.back());
     }
 
@@ -41,7 +42,7 @@ public:
 int main()
 {
     _MM_SET_EXCEPTION_MASK(_MM_GET_EXCEPTION_MASK() & ~_MM_MASK_INVALID);
-    Builder builder({1, 28 * 28}, 10);
+    Builder builder({28 * 28}, 10);
     builder.addFullyConnectedLayer(100);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();

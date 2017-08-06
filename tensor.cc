@@ -91,7 +91,7 @@ Tensor Tensor::reshape(Shape newShape) const {
             shape());
     if (shape() == newShape) {
         return *this;
-    } else if (shape().t() == newShape) {
+    } else if (shape().dim() == 2 && shape().t() == newShape) {
         return t();
     } else {
         return Tensor(std::make_shared<Expr>(newShape, Reshape{}, expr_));

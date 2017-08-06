@@ -193,6 +193,8 @@ void add(
         TensorValue* result)
 {
     assert(!transposeX && !transposeY);
+    (void)transposeX;
+    (void)transposeY;
     if (negateX && negateY) {
         zipWith(x, y, [](float x, float y) { return -x - y; }, result);
     } else if (negateX && !negateY) {
@@ -213,6 +215,8 @@ void divide(
         TensorValue* result)
 {
     assert(!transposeX && !transposeY);
+    (void)transposeX;
+    (void)transposeY;
     if (negateResult) {
         zipWith(x, y, [](float x, float y) { return -x / y; }, result);
     } else {
@@ -229,6 +233,8 @@ void hadamard(
         TensorValue* result)
 {
     assert(!transposeX && !transposeY);
+    (void)transposeX;
+    (void)transposeY;
     if (negateResult) {
         zipWith(x, y, [](float x, float y) { return -x * y; }, result);
     } else {
