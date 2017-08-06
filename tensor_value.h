@@ -1,37 +1,40 @@
 #pragma once
 
 #include "shape.h"
-#include "types.h"
 
-#include <mpark/variant.hpp>
+#include <vector>
 
 struct Conv2D { size_t padTop; size_t padBottom; size_t padLeft; size_t padRight; };
 
 class TensorValue {
 public:
     /* implicit */ TensorValue(float x);
-    /* implicit */ TensorValue(Matrix m);
-    /* implicit */ TensorValue(Cube c);
-    Shape shape() const;
+    TensorValue(Shape shape, std::vector<float> data);
+    const Shape& shape() const { return shape_; }
+    const float* data() const { return data_.data(); }
+    const float* dataEnd() const { return data_.data() + shape_.size(); }
+    float* data() { return data_.data(); }
+    float* dataEnd() { return data_.data() + shape_.size(); }
 
     static TensorValue zeros(const Shape& shape);
     static TensorValue ones(const Shape& shape);
     static TensorValue randn(const Shape& shape, float stddev = 1.0f);
     static TensorValue randu(const Shape& shape);
 
+    const float& operator()(size_t i) const;
+    const float& operator()(size_t i, size_t j) const;
+    const float& operator()(size_t i, size_t j, size_t k) const;
+    const float& operator()(const std::vector<size_t> &indices) const;
+    float& operator()(size_t i);
+    float& operator()(size_t i, size_t j);
+    float& operator()(size_t i, size_t j, size_t k);
+    float& operator()(const std::vector<size_t> &indices);
+
     float toScalar() const;
-    const float& asScalar() const;
-    const Matrix& asMatrix() const;
-    const Cube& asCube() const;
-
-    float& asScalar();
-    Matrix& asMatrix();
-    Cube& asCube();
-
-    const mpark::variant<float, Matrix, Cube>& value() const { return value_; }
 
 private:
-    mpark::variant<float, Matrix, Cube> value_;
+    std::vector<float> data_;
+    Shape shape_;
 };
 
 void multiply(

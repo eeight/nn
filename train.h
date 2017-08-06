@@ -1,8 +1,8 @@
 #pragma once
 
-#include "types.h"
+#include "tensor_value.h"
 
 struct Sample {
-    Row x;
-    Row y;
+    TensorValue x;
+    TensorValue y;
 };

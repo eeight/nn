@@ -1,23 +1,23 @@
 #pragma once
 
-#include "types.h"
-
 #include <cstddef>
 #include <string>
+#include <vector>
+#include <cassert>
 
 class Shape {
 public:
     explicit Shape(std::vector<size_t> dim) :
         dim_(std::move(dim))
-    {}
-
-    explicit Shape(const Matrix& matrix) :
-        Shape({matrix.n_rows, matrix.n_cols})
-    {}
+    {
+        assert(size());
+    }
 
     Shape(std::initializer_list<size_t> dim) :
         dim_{dim}
-    {}
+    {
+        assert(size());
+    }
 
     size_t dim() const { return dim_.size(); }
 

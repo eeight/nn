@@ -123,7 +123,7 @@ Tensor Tensor::r() const {
 bool Tensor::isConst1() const {
     if (const auto konst = mpark::get_if<Const>(&expr_->op)) {
         return konst->value.shape().isScalar() &&
-            konst->value.asScalar() == 1.0f;
+            konst->value.toScalar() == 1.0f;
     } else {
         return false;
     }

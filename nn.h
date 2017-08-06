@@ -2,7 +2,6 @@
 
 #include "loss.h"
 #include "train.h"
-#include "types.h"
 #include "tensor.h"
 #include "program.h"
 

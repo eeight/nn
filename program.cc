@@ -185,7 +185,6 @@ public:
             exprToResultIndex_[target.unwrap().get()] = i;
             const auto shape = target.shape();
             // Preallocate result.
-            //std::cerr << "Allocate result: " << shape.toString() << '\n';
             result_.push_back(TensorValue::zeros(shape));
         }
     }
@@ -335,7 +334,7 @@ struct PrettyPrinter {
 
     void operator()(const detail::ConstRef& ref) const {
         if (ref.value->shape().isScalar()) {
-            out << "const(" << ref.value->asScalar() << ")";
+            out << "const(" << ref.value->toScalar() << ")";
         } else {
             out << "const(" << ref.value << ")";
         }
@@ -457,21 +456,7 @@ const std::vector<TensorValue>& Program::operator()(
                 RefResolver<TensorValue *>{args, result_, tmp_},
                 ref);
     };
-    //PrettyPrinter pp{std::cerr};
     for (auto& statement: program_) {
-        const auto& s = statement;
-        //std::cerr << "execute: ";
-        //mpark::visit(pp, s.result);
-        //std::cerr << " = ";
-        //mpark::visit(pp, s.op);
-        //std::cerr << "(";
-        for (size_t i = 0; i != s.args.size(); ++i) {
-            if (i != 0) {
-                //std::cerr << ", ";
-            }
-            //mpark::visit(pp, s.args[i]);
-        }
-        //std::cerr << ");\n";
         mpark::visit(
                 StatementExecutor<
                     decltype(resolveRead),

@@ -3,11 +3,11 @@ enable_testing()
 
 project(nn)
 
-find_package(Armadillo REQUIRED)
+find_package(CBLAS REQUIRED)
 
 include_directories(
     contrib/variant/include
-    ${Armadillo_INCLUDE_DIRS})
+    ${CBLAS_INCLUDE_DIRS})
 
 add_subdirectory(contrib/variant)
 
@@ -32,7 +32,7 @@ add_library(
     mnist.cc)
 
 add_executable(main main.cc)
-target_link_libraries(main nn mnist tensor ${ARMADILLO_LIBRARY})
+target_link_libraries(main nn mnist tensor ${CBLAS_LIBRARIES})
 
 find_package(Boost COMPONENTS unit_test_framework REQUIRED)
 
@@ -40,6 +40,6 @@ add_executable(tensor_test tensor_test.cc)
 target_link_libraries(tensor_test
     tensor
     mpark_variant
-    ${ARMADILLO_LIBRARY}
+    ${CBLAS_LIBRARIES}
     ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
 add_test(tensor_test, tensor_test)

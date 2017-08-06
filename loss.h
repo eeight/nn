@@ -1,6 +1,5 @@
 #pragma once
 
-#include "types.h"
 #include "tensor.h"
 
 Tensor quadraticLoss(const Tensor& out, const Tensor& target);

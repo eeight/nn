@@ -2,10 +2,12 @@
 
 #include "ad.h"
 
+#include <random>
+
 namespace {
 
-size_t maxIndex(const Row& row) {
-    return std::max_element(row.begin(), row.end()) - row.begin();
+size_t maxIndex(const float* x, size_t size) {
+    return std::max_element(x, x + size) - x;
 }
 
 template <class F>
@@ -13,15 +15,21 @@ void forEachBatch(
         const std::vector<Sample>& samples,
         size_t batchSize,
         F f) {
-    const size_t inputSize = samples.front().x.n_cols;
-    const size_t outputSize = samples.front().y.n_cols;
+    const size_t inputSize = samples.front().x.shape()(1);
+    const size_t outputSize = samples.front().y.shape()(1);
 
     for (size_t i = 0; i + batchSize <= samples.size(); i += batchSize) {
-        Matrix batchInput(batchSize, inputSize);
-        Matrix batchTarget(batchSize, outputSize);
+        auto batchInput = TensorValue::zeros({batchSize, inputSize});
+        auto batchTarget = TensorValue::zeros({batchSize, outputSize});
         for (size_t j = 0; j != batchSize; ++j) {
-            batchInput.row(j) = samples[i + j].x;
-            batchTarget.row(j) = samples[i + j].y;
+            std::copy(
+                    samples[i + j].x.data(),
+                    samples[i + j].x.dataEnd(),
+                    &batchInput(j, 0));
+            std::copy(
+                    samples[i + j].y.data(),
+                    samples[i + j].y.dataEnd(),
+                    &batchTarget(j, 0));
         }
 
         f(batchInput, batchTarget);
@@ -35,11 +43,14 @@ float evaluate(
     forEachBatch(
         samples,
         nn.miniBatchSize(),
-        [&](const Matrix& batchInput, const Matrix& batchTarget) {
-            const auto output = nn.predict(batchInput).asMatrix();
-            for (size_t i = 0; i != batchTarget.n_rows; ++i) {
+        [&](const TensorValue& batchInput, const TensorValue& batchTarget) {
+            const auto output = nn.predict(batchInput);
+            const size_t rows = batchTarget.shape()(0);
+            const size_t cols = batchTarget.shape()(1);
+            for (size_t i = 0; i != rows; ++i) {
                 correct +=
-                    maxIndex(output.row(i)) == maxIndex(batchTarget.row(i));
+                        maxIndex(&output(i, 0), cols) ==
+                        maxIndex(&batchTarget(i, 0), cols);
                 ++total;
             }
         });
@@ -92,18 +103,14 @@ void NN::fit(
     auto dLoss = compile(diff(loss, params_), {input_, target});
     std::cout << "Loss: " << compile({loss}, {input_, target});
     std::cout << "dLoss: " << dLoss;
-    std::mt19937 mt;
+    std::default_random_engine generator;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
-        std::shuffle(train.begin(), train.end(), mt);
+        std::shuffle(train.begin(), train.end(), generator);
         forEachBatch(
             train,
             miniBatchSize(),
-            [&](const Matrix& batchInput, const Matrix& batchTarget) {
-                gradientStep(
-                        TensorValue{batchInput},
-                        TensorValue{batchTarget},
-                        dLoss,
-                        eta);
+            [&](const TensorValue& batchInput, const TensorValue& batchTarget) {
+                gradientStep(batchInput, batchTarget, dLoss, eta);
             });
         const auto correctRatio = evaluate(*this, test);
         std::cout << "Epoch done: " << (epoch + 1) <<

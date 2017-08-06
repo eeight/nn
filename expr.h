@@ -2,7 +2,6 @@
 
 #include <mpark/variant.hpp>
 
-#include "types.h"
 #include "shape.h"
 #include "tensor_value.h"
 

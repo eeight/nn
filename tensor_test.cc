@@ -7,18 +7,36 @@
 
 #include <boost/test/unit_test.hpp>
 
+bool approxEqual(const TensorValue& x, const TensorValue& y) {
+    if (x.shape() != y.shape()) {
+        return false;
+    }
+    for (size_t i = 0; i != x.shape().size(); ++i) {
+        if (std::abs(x.data()[i] - y.data()[i]) > 1e-6) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+TensorValue row(std::initializer_list<float> values) {
+    auto x = TensorValue::zeros({1, values.size()});
+    std::copy(values.begin(), values.end(), x.data());
+    return x;
+}
+#if 0
+
 BOOST_AUTO_TEST_CASE(const_tensor) {
-    const Matrix m = arma::randu<Matrix>(10, 10);
+    const auto m = TensorValue::randu({10, 10});
     const auto t = newConstTensor(m);
-    BOOST_REQUIRE(arma::approx_equal(
-                m, eval(t).asMatrix(), "absdiff", 1e-6));
+    BOOST_REQUIRE(approxEqual(m, eval(t)));
 }
 
 BOOST_AUTO_TEST_CASE(arg_passthrough) {
     const auto m = TensorValue::randu({10, 10});
     const auto t = newPlaceholder({10, 10});
-    BOOST_REQUIRE(arma::approx_equal(
-                m.asMatrix(), eval(t, {t}, {&m}).asMatrix(), "absdiff", 1e-6));
+    BOOST_REQUIRE(approxEqual(m, eval(t, {t}, {&m})));
 }
 
 BOOST_AUTO_TEST_CASE(scalar_loss_value) {
@@ -64,19 +82,20 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
         lossValue = nextLossValue;
     }
 }
+#endif
 
 BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
-    auto x = newPlaceholder({2, 1});
-    auto y = newPlaceholder({2, 1});
+    auto x = newPlaceholder({1, 2});
+    auto y = newPlaceholder({1, 2});
     auto w = newTensor(TensorValue::ones({2, 2}));
-    auto b = newTensor(TensorValue::zeros({2, 1}));
+    auto b = newTensor(TensorValue::zeros({1, 2}));
     std::vector<Tensor> params = {w, b};
 
-    const TensorValue xValue{Col{0, 1}};
-    const TensorValue yValue{Col{1, 0}};
+    const auto xValue = row({0, 1});
+    const auto yValue = row({1, 0});
     const std::vector<const TensorValue *> args = {&xValue, &yValue};
 
-    auto loss = halfSumSquares(w * x + b - y) + halfSumSquares(w);
+    auto loss = halfSumSquares(x * w + b - y) + halfSumSquares(w);
     auto dLoss = compile(diff(loss, params), {x, y});
 
     BOOST_TEST(loss.shape().size() == 1);
@@ -99,13 +118,13 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
 }
 
 BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
-    auto x = newTensor(Col{{0, 1}});
-    auto y = newTensor(Col{{1, 0}});
+    auto x = newTensor(row({0, 1}));
+    auto y = newTensor(row({1, 0}));
     auto w = newTensor(TensorValue::ones({2, 2}));
-    auto b = newTensor(TensorValue::zeros({2, 1}));
+    auto b = newTensor(TensorValue::zeros({1, 2}));
     std::vector<Tensor> params = {w, b};
 
-    auto lossTensor = halfSumSquares(sigmoid(w * x + b) - y) + halfSumSquares(w);
+    auto lossTensor = halfSumSquares(sigmoid(x * w + b) - y) + halfSumSquares(w);
     BOOST_TEST(lossTensor.shape().size() == 1);
     auto loss = compile({lossTensor}, {});
     auto dLoss = compile(diff(lossTensor, params), {});
@@ -128,11 +147,11 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
 }
 
 BOOST_AUTO_TEST_CASE(sum_squares) {
-    auto x = newTensor(Col{{0, 1}});
-    auto y = newTensor(Col{{1, 0}});
+    auto x = newTensor(row({0, 1}));
+    auto y = newTensor(row({1, 0}));
     auto w = newTensor(TensorValue::ones({2, 2}));
 
-    auto l = halfSumSquares(w * x - y) + halfSumSquares(w);
+    auto l = halfSumSquares(x * w - y) + halfSumSquares(w);
     auto dl = diff(l, {w});
     std::cerr << "L:\n" << compile({l}, {});
     std::cerr << "DL:\n" << compile(dl, {});

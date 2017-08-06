@@ -35,7 +35,7 @@ std::vector<int> readLabels(const std::string& path) {
     return labels;
 }
 
-std::vector<Row> read(const std::string& path) {
+std::vector<TensorValue> read(const std::string& path) {
     std::ifstream in(path);
     if (!in) {
         throw std::runtime_error("Cannot open " + path);
@@ -44,17 +44,17 @@ std::vector<Row> read(const std::string& path) {
     if (nextInt(in) != 2051) {
         throw std::runtime_error("Unexpected magic in labels file");
     }
-    std::vector<Row> images(nextInt(in));
+    const size_t imagesNumber = nextInt(in);
+    std::vector<TensorValue> images;
     const size_t rows = nextInt(in);
     const size_t cols = nextInt(in);
     std::vector<unsigned char> bytes(cols * rows);
-    for (auto& image: images) {
-        image.set_size(rows * cols);
+    for (size_t i = 0; i != imagesNumber; ++i) {
         in.read(reinterpret_cast<char *>(bytes.data()), bytes.size());
-        for (size_t i = 0; i != bytes.size(); ++i) {
-            image(i) = bytes[i];
+        images.push_back(TensorValue::zeros({rows * cols}));
+        for (size_t j = 0; j != bytes.size(); ++j) {
+            images.back()(j) = bytes[j] / 255.0;
         }
-        image /= 255.0;
     }
 
     in.close();
@@ -62,13 +62,13 @@ std::vector<Row> read(const std::string& path) {
     return images;
 }
 
-Row oneHot(size_t size, size_t i) {
-    Row row(size, arma::fill::zeros);
-    row(i) = 1.0f;
-    return row;
+TensorValue oneHot(size_t size, size_t i) {
+    auto v = TensorValue::zeros({size});
+    v(i) = 1.0f;
+    return v;
 }
 
-std::vector<Sample> zip(std::vector<Row> xs, const std::vector<int>& ys) {
+std::vector<Sample> zip(std::vector<TensorValue> xs, const std::vector<int>& ys) {
     std::vector<Sample> result;
     result.reserve(xs.size());
 

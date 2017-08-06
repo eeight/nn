@@ -5,7 +5,6 @@
 
 #include "loss.h"
 #include "mnist.h"
-#include "types.h"
 #include "nn.h"
 
 #include <xmmintrin.h>
