@@ -11,12 +11,29 @@
 
 namespace {
 
+template <class X, class Y, class Op>
+void zipWith(X x, Y y, Op op, TensorValue* result) {
+    const size_t size = result->shape().size();
+    for (size_t i = 0; i != size; ++i) {
+        result->data()[i] = op(x(i), y(i));
+    }
+}
+
 template <class Op>
 void zipWith(
-        const TensorValue& x, const TensorValue& y, Op op, TensorValue* result) {
-    const size_t size = x.shape().size();
-    for (size_t i = 0; i != size; ++i) {
-        result->data()[i] = op(x.data()[i], y.data()[i]);
+        const TensorValue& x,
+        const TensorValue& y,
+        Op op,
+        TensorValue* result) {
+    auto xi = [&](size_t i) { return x.data()[i]; };
+    auto yi = [&](size_t i) { return y.data()[i]; };
+    auto cont = [&](auto xi, auto yi) { zipWith(xi, yi, op, result); };
+    if (x.shape().isScalar()) {
+        cont([value = x.toScalar()](size_t) { return value; }, yi);
+    } else if (y.shape().isScalar()) {
+        cont(xi, [value = y.toScalar()](size_t) { return value; });
+    } else {
+        cont(xi, yi);
     }
 }
 
