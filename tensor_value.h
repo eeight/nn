@@ -6,20 +6,36 @@
 
 struct Conv2D { size_t padTop; size_t padBottom; size_t padLeft; size_t padRight; };
 
-class TensorValue {
-public:
-    /* implicit */ TensorValue(float x);
-    TensorValue(Shape shape, std::vector<float> data);
-    const Shape& shape() const { return shape_; }
-    const float* data() const { return data_.data(); }
-    const float* dataEnd() const { return data_.data() + shape_.size(); }
-    float* data() { return data_.data(); }
-    float* dataEnd() { return data_.data() + shape_.size(); }
+namespace detail {
 
-    static TensorValue zeros(const Shape& shape);
-    static TensorValue ones(const Shape& shape);
-    static TensorValue randn(const Shape& shape, float stddev = 1.0f);
-    static TensorValue randu(const Shape& shape);
+template <class Derived>
+class ConstTensorBase {
+public:
+    explicit ConstTensorBase(Shape shape);
+    const Shape& shape() const { return shape_; }
+    const float* dataEnd() const { return getData() + shape_.size(); }
+
+    const float& operator()(size_t i) const;
+    const float& operator()(size_t i, size_t j) const;
+    const float& operator()(size_t i, size_t j, size_t k) const;
+    const float& operator()(const std::vector<size_t> &indices) const;
+
+    float toScalar() const;
+
+private:
+    const float* getData() const {
+        return static_cast<const Derived *>(this)->data();
+    }
+
+    Shape shape_;
+};
+
+template <class Derived>
+class TensorBase : public ConstTensorBase<Derived> {
+public:
+    explicit TensorBase(Shape shape);
+    float* dataEnd() { return getData() + this->shape().size(); }
+    const float* dataEnd() const;
 
     const float& operator()(size_t i) const;
     const float& operator()(size_t i, size_t j) const;
@@ -30,73 +46,112 @@ public:
     float& operator()(size_t i, size_t j, size_t k);
     float& operator()(const std::vector<size_t> &indices);
 
-    float toScalar() const;
+private:
+    float* getData() { return static_cast<Derived *>(this)->data(); }
+};
+
+} // namespace detail
+
+class TensorValue : public detail::TensorBase<TensorValue> {
+public:
+    /* implicit */ TensorValue(float x);
+    explicit TensorValue(Shape shape, std::vector<float> data);
+    float* data() { return data_.data(); }
+    const float* data() const { return data_.data(); }
+
+    static TensorValue zeros(const Shape& shape);
+    static TensorValue ones(const Shape& shape);
+    static TensorValue randn(const Shape& shape, float stddev = 1.0f);
+    static TensorValue randu(const Shape& shape);
 
 private:
     std::vector<float> data_;
-    Shape shape_;
+};
+
+class TensorRef;
+
+class ConstTensorRef : public detail::ConstTensorBase<ConstTensorRef> {
+public:
+    /* implicit */ ConstTensorRef(const TensorValue& value);
+    /* implicit */ ConstTensorRef(const TensorRef& ref);
+
+    const float* data() const { return data_; }
+private:
+    const float* data_;
+};
+
+class TensorRef : public detail::TensorBase<TensorRef> {
+public:
+    /* implicit */ TensorRef(TensorValue& value);
+    /* implicit */ TensorRef(TensorValue* value);
+
+    const float* data() const { return data_; }
+    float* data() { return data_; }
+
+private:
+    float* data_;
 };
 
 void multiply(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateResult,
-        TensorValue* result);
+        TensorRef&& result);
 
 void add(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
         bool negateX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateY,
-        TensorValue* result);
+        TensorRef&& result);
 
 void divide(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateResult,
-        TensorValue* result);
+        TensorRef&& result);
 
 void hadamard(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateResult,
-        TensorValue* result);
+        TensorRef&& result);
 
-void pow(const TensorValue& x, float y, TensorValue* result);
-void exp(const TensorValue& x, TensorValue* result);
-void log(const TensorValue& x, TensorValue* result);
-void negate(const TensorValue& x, TensorValue* result);
-void transpose(const TensorValue& x, TensorValue* result);
-void reverse(const TensorValue& x, TensorValue* result);
-void reshape(const TensorValue& x, TensorValue* result);
-float accu(const TensorValue& x);
+void pow(const ConstTensorRef& x, float y, TensorRef&& result);
+void exp(const ConstTensorRef& x, TensorRef&& result);
+void log(const ConstTensorRef& x, TensorRef&& result);
+void negate(const ConstTensorRef& x, TensorRef&& result);
+void transpose(const ConstTensorRef& x, TensorRef&& result);
+void reverse(const ConstTensorRef& x, TensorRef&& result);
+void reshape(const ConstTensorRef& x, TensorRef&& result);
+float accu(const ConstTensorRef& x);
 
 // y += factor * x
 void addMultiply(
-        const TensorValue& x, float factor, TensorValue* y);
+        const ConstTensorRef& x, float factor, TensorRef&& y);
 
-void tile(const TensorValue& x, const Shape& multiplier, TensorValue* y);
-void untile(const TensorValue& x, const Shape& multiplier, TensorValue* y);
-void sigmoid(const TensorValue& x, TensorValue* result);
-void halfSumSquares(const TensorValue& x, TensorValue* result);
+void tile(const ConstTensorRef& x, const Shape& multiplier, TensorRef&& y);
+void untile(const ConstTensorRef& x, const Shape& multiplier, TensorRef&& y);
+void sigmoid(const ConstTensorRef& x, TensorRef&& result);
+void halfSumSquares(const ConstTensorRef& x, TensorRef&& result);
 void conv2d(
-        const TensorValue& a,
-        const TensorValue& k,
+        const ConstTensorRef& a,
+        const ConstTensorRef& k,
         const Conv2D& conv,
-        TensorValue* result);
+        TensorRef&& result);
 void maxPool(
-        const TensorValue& a, const Shape& pool, TensorValue* result);
+        const ConstTensorRef& a, const Shape& pool, TensorRef&& result);
 void maxPoolDiff(
-        const TensorValue& a,
-        const TensorValue& poolResult,
-        const TensorValue& poolDiff,
+        const ConstTensorRef& a,
+        const ConstTensorRef& poolResult,
+        const ConstTensorRef& poolDiff,
         const Shape& pool,
-        TensorValue* result);
+        TensorRef&& result);

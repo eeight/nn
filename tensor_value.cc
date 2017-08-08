@@ -12,22 +12,22 @@
 namespace {
 
 template <class X, class Y, class Op>
-void zipWith(X x, Y y, Op op, TensorValue* result) {
-    const size_t size = result->shape().size();
+void zipWithImpl(X x, Y y, Op op, TensorRef&& result) {
+    const size_t size = result.shape().size();
     for (size_t i = 0; i != size; ++i) {
-        result->data()[i] = op(x(i), y(i));
+        result.data()[i] = op(x(i), y(i));
     }
 }
 
 template <class Op>
 void zipWith(
-        const TensorValue& x,
-        const TensorValue& y,
+        const ConstTensorRef& x,
+        const ConstTensorRef& y,
         Op op,
-        TensorValue* result) {
+        TensorRef&& result) {
     auto xi = [&](size_t i) { return x.data()[i]; };
     auto yi = [&](size_t i) { return y.data()[i]; };
-    auto cont = [&](auto xi, auto yi) { zipWith(xi, yi, op, result); };
+    auto cont = [&](auto xi, auto yi) { zipWithImpl(xi, yi, op, std::move(result)); };
     if (x.shape().isScalar()) {
         cont([value = x.toScalar()](size_t) { return value; }, yi);
     } else if (y.shape().isScalar()) {
@@ -38,11 +38,11 @@ void zipWith(
 }
 
 template <class Op>
-void map(const TensorValue& x, Op op, TensorValue* result) {
+void map(const ConstTensorRef& x, Op op, TensorRef&& result) {
     const size_t size = x.shape().size();
 
     for (size_t i = 0; i != size; ++i) {
-        result->data()[i] = op(x.data()[i]);
+        result.data()[i] = op(x.data()[i]);
     }
 }
 
@@ -78,55 +78,39 @@ TensorValue randomTensor(const Shape& shape, Dist&& dist) {
 
 } // namespace
 
-TensorValue::TensorValue(float x) :
-    data_(1, x), shape_{}
+namespace detail {
+
+template <class T>
+ConstTensorBase<T>::ConstTensorBase(Shape shape) :
+    shape_(std::move(shape))
 {}
 
-TensorValue::TensorValue(Shape shape, std::vector<float> data) :
-    data_(std::move(data)), shape_(std::move(shape))
-{
-    assert(!data_.empty());
-    assert(data_.size() == shape_.size());
-}
-
-TensorValue TensorValue::zeros(const Shape& shape) {
-    return TensorValue{shape, std::vector<float>(shape.size(), 0.0f)};
-}
-
-TensorValue TensorValue::ones(const Shape& shape) {
-    return TensorValue{shape, std::vector<float>(shape.size(), 1.0f)};
-}
-
-TensorValue TensorValue::randn(const Shape& shape, float stddev) {
-    return randomTensor(shape, std::normal_distribution<float>(0, stddev));
-}
-
-TensorValue TensorValue::randu(const Shape& shape) {
-    return randomTensor(shape, std::uniform_real_distribution<float>(0, 1));
-}
-
-const float& TensorValue::operator()(size_t i) const {
+template <class T>
+const float& ConstTensorBase<T>::operator()(size_t i) const {
     if (shape_.dim() != 1) {
         throw std::logic_error("Not a vector, shape = " + shape_.toString());
     }
-    return data_.at(i);
+    return getData()[i];
 }
 
-const float& TensorValue::operator()(size_t i, size_t j) const {
+template <class T>
+const float& ConstTensorBase<T>::operator()(size_t i, size_t j) const {
     if (shape_.dim() != 2) {
         throw std::logic_error("Not a matrix, shape = " + shape_.toString());
     }
-    return data_.at(i * shape_(1) + j);
+    return getData()[i * shape_(1) + j];
 }
 
-const float& TensorValue::operator()(size_t i, size_t j, size_t k) const {
+template <class T>
+const float& ConstTensorBase<T>::operator()(size_t i, size_t j, size_t k) const {
     if (shape_.dim() != 3) {
         throw std::logic_error("Not a cube, shape = " + shape_.toString());
     }
-    return data_.at((i * shape_(1) + j) * shape_(2) + k);
+    return getData()[(i * shape_(1) + j) * shape_(2) + k];
 }
 
-const float& TensorValue::operator()(const std::vector<size_t> &indices) const {
+template <class T>
+const float& ConstTensorBase<T>::operator()(const std::vector<size_t> &indices) const {
     if (shape_.dim() != indices.size()) {
         throw std::logic_error(
                 "Unexpected number of indices: " + std::to_string(indices.size()) +
@@ -138,40 +122,127 @@ const float& TensorValue::operator()(const std::vector<size_t> &indices) const {
         index = index * shape_(i) + indices[i];
     }
 
-    return data_.at(index);
+    return getData()[index];
 }
 
-float& TensorValue::operator()(size_t i) {
-    return const_cast<float &>(const_cast<const TensorValue &>(*this)(i));
-}
-
-float& TensorValue::operator()(size_t i, size_t j) {
-    return const_cast<float &>(const_cast<const TensorValue &>(*this)(i, j));
-}
-
-float& TensorValue::operator()(size_t i, size_t j, size_t k) {
-    return const_cast<float &>(const_cast<const TensorValue &>(*this)(i, j, k));
-}
-
-float& TensorValue::operator()(const std::vector<size_t> &indices) {
-    return const_cast<float &>(const_cast<const TensorValue &>(*this)(indices));
-}
-
-float TensorValue::toScalar() const {
+template <class T>
+float ConstTensorBase<T>::toScalar() const {
     if (shape_.size() != 1) {
         throw std::logic_error(
                 "TensorValue::toScalar: cannot be converted to scalar");
     }
-    return data_.front();
+    return *getData();
 }
 
+template <class T>
+TensorBase<T>::TensorBase(Shape shape) :
+    ConstTensorBase<T>(std::move(shape))
+{}
+
+template <class T>
+const float* TensorBase<T>::dataEnd() const {
+    return static_cast<const ConstTensorBase<T> *>(this)->dataEnd();
+}
+
+template <class T>
+const float& TensorBase<T>::operator()(size_t i) const {
+    return static_cast<const ConstTensorBase<T> &>(*this)(i);
+}
+
+template <class T>
+const float& TensorBase<T>::operator()(size_t i, size_t j) const {
+    return static_cast<const ConstTensorBase<T> &>(*this)(i, j);
+}
+
+template <class T>
+const float& TensorBase<T>::operator()(size_t i, size_t j, size_t k) const {
+    return static_cast<const ConstTensorBase<T> &>(*this)(i, j, k);
+}
+
+template <class T>
+const float& TensorBase<T>::operator()(const std::vector<size_t> &indices) const {
+    return static_cast<const ConstTensorBase<T> &>(*this)(indices);
+}
+
+template <class T>
+float& TensorBase<T>::operator()(size_t i) {
+    return const_cast<float &>(const_cast<const TensorBase<T> &>(*this)(i));
+}
+
+template <class T>
+float& TensorBase<T>::operator()(size_t i, size_t j) {
+    return const_cast<float &>(const_cast<const TensorBase<T> &>(*this)(i, j));
+}
+
+template <class T>
+float& TensorBase<T>::operator()(size_t i, size_t j, size_t k) {
+    return const_cast<float &>(const_cast<const TensorBase<T> &>(*this)(i, j, k));
+}
+
+template <class T>
+float& TensorBase<T>::operator()(const std::vector<size_t> &indices) {
+    return const_cast<float &>(const_cast<const TensorBase<T> &>(*this)(indices));
+}
+
+} // namespace detail
+
+TensorValue::TensorValue(float x) :
+    TensorBase(Shape{}), data_(1, x)
+{}
+
+TensorValue::TensorValue(Shape shape, std::vector<float> data) :
+    detail::TensorBase<TensorValue>(std::move(shape)), data_(std::move(data))
+{
+    assert(!data_.empty());
+    assert(data_.size() == this->shape().size());
+}
+
+TensorValue TensorValue::zeros(const Shape& shape) {
+    return TensorValue{
+        shape, std::vector<float>(shape.size(), 0.0f)};
+}
+
+TensorValue TensorValue::ones(const Shape& shape) {
+    return TensorValue{
+        shape, std::vector<float>(shape.size(), 1.0f)};
+}
+
+TensorValue TensorValue::randn(const Shape& shape, float stddev) {
+    return randomTensor(shape, std::normal_distribution<float>(0, stddev));
+}
+
+TensorValue TensorValue::randu(const Shape& shape) {
+    return randomTensor(shape, std::uniform_real_distribution<float>(0, 1));
+}
+
+ConstTensorRef::ConstTensorRef(const TensorValue& value) :
+    detail::ConstTensorBase<ConstTensorRef>(value.shape()), data_(value.data())
+{}
+
+ConstTensorRef::ConstTensorRef(const TensorRef& ref) :
+    detail::ConstTensorBase<ConstTensorRef>(ref.shape()), data_(ref.data())
+{}
+
+TensorRef::TensorRef(TensorValue& value) :
+    TensorRef(&value)
+{}
+
+TensorRef::TensorRef(TensorValue* value) :
+    detail::TensorBase<TensorRef>(value->shape()), data_(value->data())
+{}
+
+template class detail::ConstTensorBase<TensorValue>;
+template class detail::TensorBase<TensorValue>;
+template class detail::ConstTensorBase<ConstTensorRef>;
+template class detail::TensorBase<TensorRef>;
+
 void multiply(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateResult,
-        TensorValue* result) {
+        TensorRef&& result) {
     if (x.shape().dim() != 2 || y.shape().dim() != 2) {
         throw std::logic_error(
                 "Cannot multiply tensors with shape " + x.shape().toString() +
@@ -196,127 +267,140 @@ void multiply(
             y.data(),
             y.shape()(1),
             0.0f,
-            result->data(),
-            result->shape()(1));
+            result.data(),
+            result.shape()(1));
 }
 
 void add(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
         bool negateX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateY,
-        TensorValue* result)
+        TensorRef&& result)
 {
     assert(!transposeX && !transposeY);
     (void)transposeX;
     (void)transposeY;
+    auto cont = [&](auto op) {
+        zipWith(x, y, op, std::move(result));
+    };
     if (negateX && negateY) {
-        zipWith(x, y, [](float x, float y) { return -x - y; }, result);
+        cont([](float x, float y) { return -x - y; });
     } else if (negateX && !negateY) {
-        zipWith(x, y, [](float x, float y) { return y - x; }, result);
+        cont([](float x, float y) { return y - x; });
     } else if (!negateX && negateY) {
-        zipWith(x, y, [](float x, float y) { return x - y; }, result);
+        cont([](float x, float y) { return x - y; });
     } else {
-        zipWith(x, y, [](float x, float y) { return x + y; }, result);
+        cont([](float x, float y) { return x + y; });
     }
 }
 
 void divide(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateResult,
-        TensorValue* result)
+        TensorRef&& result)
 {
     assert(!transposeX && !transposeY);
     (void)transposeX;
     (void)transposeY;
+    auto cont = [&](auto op) {
+        zipWith(x, y, op, std::move(result));
+    };
     if (negateResult) {
-        zipWith(x, y, [](float x, float y) { return -x / y; }, result);
+        cont([](float x, float y) { return -x / y; });
     } else {
-        zipWith(x, y, [](float x, float y) { return x / y; }, result);
+        cont([](float x, float y) { return x / y; });
     }
 }
 
 void hadamard(
-        const TensorValue& x,
+        const ConstTensorRef& x,
         bool transposeX,
-        const TensorValue& y,
+        const ConstTensorRef& y,
         bool transposeY,
         bool negateResult,
-        TensorValue* result)
+        TensorRef&& result)
 {
     assert(!transposeX && !transposeY);
     (void)transposeX;
     (void)transposeY;
+    auto cont = [&](auto op) {
+        zipWith(x, y, op, std::move(result));
+    };
     if (negateResult) {
-        zipWith(x, y, [](float x, float y) { return -x * y; }, result);
+        cont([](float x, float y) { return -x * y; });
     } else {
-        zipWith(x, y, [](float x, float y) { return x * y; }, result);
+        cont([](float x, float y) { return x * y; });
     }
 }
 
-void pow(const TensorValue& x, float y, TensorValue* result) {
-    map(x, [y](float x) { return std::pow(x, y); }, result);
+void pow(const ConstTensorRef& x, float y, TensorRef&& result) {
+    map(x, [y](float x) { return std::pow(x, y); }, std::move(result));
 }
 
-void exp(const TensorValue& x, TensorValue* result) {
-    map(x, [](float x) { return std::exp(x); }, result);
+void exp(const ConstTensorRef& x, TensorRef&& result) {
+    map(x, [](float x) { return std::exp(x); }, std::move(result));
 }
 
-void log(const TensorValue& x, TensorValue* result) {
-    map(x, [](float x) { return std::log(x); }, result);
+void log(const ConstTensorRef& x, TensorRef&& result) {
+    map(x, [](float x) { return std::log(x); }, std::move(result));
 }
 
-void negate(const TensorValue& x, TensorValue* result) {
-    map(x, [](float x) { return -x; }, result);
+void negate(const ConstTensorRef& x, TensorRef&& result) {
+    map(x, [](float x) { return -x; }, std::move(result));
 }
 
-void transpose(const TensorValue& x, TensorValue* result) {
+void transpose(const ConstTensorRef& x, TensorRef&& result) {
     const size_t rows = x.shape()(x.shape().dim() - 2);
     const size_t cols = x.shape()(x.shape().dim() - 1);
     for (size_t i = 0; i != rows; ++i) {
         for (size_t j = 0; j != cols; ++j) {
-            (*result)(j, i) = x(i, j);
+            result(j, i) = x(i, j);
         }
     }
 }
 
-void reverse(const TensorValue& x, TensorValue* result) {
+void reverse(const ConstTensorRef& x, TensorRef&& result) {
     const size_t size = x.shape().size();
     for (size_t i = 0; i != size; ++i) {
-        result->data()[size - i - 1] = x.data()[i];
+        result.data()[size - i - 1] = x.data()[i];
     }
 }
 
-void reshape(const TensorValue& x, TensorValue* result) {
-    std::copy(x.data(), x.dataEnd(), result->data());
+void reshape(const ConstTensorRef& x, TensorRef&& result) {
+    std::copy(x.data(), x.dataEnd(), result.data());
 }
 
-float accu(const TensorValue& x) {
+float accu(const ConstTensorRef& x) {
     return std::accumulate(x.data(), x.dataEnd(), 0.0f);
 }
 
 void addMultiply(
-        const TensorValue& x, float factor, TensorValue* y) {
-    zipWith(x, *y, [factor](float x, float y) { return x * factor + y; }, y);
+        const ConstTensorRef& x, float factor, TensorRef&& y) {
+    zipWith(
+            x,
+            y,
+            [factor](float x, float y) { return x * factor + y; },
+            std::move(y));
 }
 
-void tile(const TensorValue& x, const Shape& multiplier, TensorValue* y) {
+void tile(const ConstTensorRef& x, const Shape& multiplier, TensorRef&& y) {
     std::vector<size_t> indices(multiplier.dim(), 0);
     std::vector<size_t> xIndices(multiplier.dim());
-    const size_t size = y->shape().size();
+    const size_t size = y.shape().size();
     for (size_t i = 0; i != size; ++i) {
         for (size_t j = 0; j != xIndices.size(); ++j) {
             xIndices[j] = indices[j] % x.shape()(j);
         }
-        (*y)(indices) = x(xIndices);
+        y(indices) = x(xIndices);
         if (i + 1 != size) {
             size_t j = 0;
-            for (; indices[j] == y->shape()(j) - 1; ++j) {
+            for (; indices[j] == y.shape()(j) - 1; ++j) {
                 indices[j] = 0;
             }
             ++indices[j];
@@ -324,16 +408,16 @@ void tile(const TensorValue& x, const Shape& multiplier, TensorValue* y) {
     }
 }
 
-void untile(const TensorValue& x, const Shape& multiplier, TensorValue* y) {
+void untile(const ConstTensorRef& x, const Shape& multiplier, TensorRef&& y) {
     std::vector<size_t> indices(multiplier.dim(), 0);
     std::vector<size_t> yIndices(multiplier.dim());
     const size_t size = x.shape().size();
-    std::fill(y->data(), y->dataEnd(), 0.0f);
+    std::fill(y.data(), y.dataEnd(), 0.0f);
     for (size_t i = 0; i != size; ++i) {
         for (size_t j = 0; j != yIndices.size(); ++j) {
-            yIndices[j] = indices[j] % y->shape()(j);
+            yIndices[j] = indices[j] % y.shape()(j);
         }
-        (*y)(yIndices) += x(indices);
+        y(yIndices) += x(indices);
         if (i + 1 != size) {
             size_t j = 0;
             for (; indices[j] == x.shape()(j) - 1; ++j) {
@@ -344,12 +428,12 @@ void untile(const TensorValue& x, const Shape& multiplier, TensorValue* y) {
     }
 }
 
-void sigmoid(const TensorValue& x, TensorValue* result) {
-    map(x, [](float x) { return 1.0f / (1.0f + std::exp(-x)); }, result);
+void sigmoid(const ConstTensorRef& x, TensorRef&& result) {
+    map(x, [](float x) { return 1.0f / (1.0f + std::exp(-x)); }, std::move(result));
 }
 
-void halfSumSquares(const TensorValue& x, TensorValue* result) {
-    *result->data() = 0.5f * std::accumulate(
+void halfSumSquares(const ConstTensorRef& x, TensorRef&& result) {
+    *result.data() = 0.5f * std::accumulate(
             x.data(),
             x.dataEnd(),
             0.0f,
@@ -357,15 +441,15 @@ void halfSumSquares(const TensorValue& x, TensorValue* result) {
 }
 
 void conv2d(
-        const TensorValue& a,
-        const TensorValue& k,
+        const ConstTensorRef& a,
+        const ConstTensorRef& k,
         const Conv2D& conv,
-        TensorValue* result) {
+        TensorRef&& result) {
     const size_t kRows = k.shape()(0);
     const size_t kCols = k.shape()(1);
 
-    for (size_t row = 0; row < result->shape()(0); ++row) {
-        for (size_t col = 0; col < result->shape()(1); ++col) {
+    for (size_t row = 0; row < result.shape()(0); ++row) {
+        for (size_t col = 0; col < result.shape()(1); ++col) {
             int firstARow = (int)row - conv.padTop;
             int lastARow = firstARow + kRows;
             int firstACol = (int)col - conv.padLeft;
@@ -388,7 +472,7 @@ void conv2d(
             if (lastACol > (int)a.shape()(1)) {
                 lastACol = a.shape()(1);
             }
-            (*result)(row, col) = dot(
+            result(row, col) = dot(
                     &a(firstARow, firstACol),
                     a.shape()(0),
                     &k(firstKRow, firstKCol),
@@ -400,32 +484,32 @@ void conv2d(
 }
 
 void maxPool(
-        const TensorValue& a, const Shape& pool, TensorValue* result) {
-    for (size_t row = 0; row != result->shape()(0); ++row) {
-        for (size_t col = 0; col != result->shape()(1); ++col) {
+        const ConstTensorRef& a, const Shape& pool, TensorRef&& result) {
+    for (size_t row = 0; row != result.shape()(0); ++row) {
+        for (size_t col = 0; col != result.shape()(1); ++col) {
             float max = -std::numeric_limits<float>::infinity();
             for (size_t i = 0; i != pool(0); ++i) {
                 for (size_t j = 0; j != pool(1); ++j) {
                     max = std::max(max, a(row * pool(0) + i, col * pool(1) + j));
                 }
             }
-            (*result)(row, col) = max;
+            result(row, col) = max;
         }
     }
 }
 
 void maxPoolDiff(
-        const TensorValue& a,
-        const TensorValue& poolResult,
-        const TensorValue& poolDiff,
+        const ConstTensorRef& a,
+        const ConstTensorRef& poolResult,
+        const ConstTensorRef& poolDiff,
         const Shape& pool,
-        TensorValue* result) {
-    for (size_t row = 0; row != result->shape()(0); ++row) {
+        TensorRef&& result) {
+    for (size_t row = 0; row != result.shape()(0); ++row) {
         const size_t rowPool = row / pool(0);
-        for (size_t col = 0; col != result->shape()(1); ++col) {
+        for (size_t col = 0; col != result.shape()(1); ++col) {
             const size_t colPool = col / pool(1);
             if (a(row, col) == poolResult(rowPool, colPool)) {
-                (*result)(row, col) = poolDiff(rowPool, colPool);
+                result(row, col) = poolDiff(rowPool, colPool);
             }
         }
     }
