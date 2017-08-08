@@ -7,6 +7,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <cmath>
+
 bool approxEqual(const TensorValue& x, const TensorValue& y) {
     if (x.shape() != y.shape()) {
         return false;
@@ -62,7 +64,6 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
 
     auto loss = pow(x * w + b - y, 2) + pow(w, 2);
     auto dLoss = compile(diff(loss, params), {});
-    std::cerr << dLoss << '\n';
 
     BOOST_TEST(loss.shape().size() == 1);
 
@@ -146,17 +147,6 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(sum_squares) {
-    auto x = newTensor(row({0, 1}));
-    auto y = newTensor(row({1, 0}));
-    auto w = newTensor(TensorValue::ones({2, 2}));
-
-    auto l = halfSumSquares(x * w - y) + halfSumSquares(w);
-    auto dl = diff(l, {w});
-    std::cerr << "L:\n" << compile({l}, {});
-    std::cerr << "DL:\n" << compile(dl, {});
-}
-
 BOOST_AUTO_TEST_CASE(convolution) {
     auto a = newTensor(TensorValue::randu({5, 5}));
     auto k = newTensor(TensorValue::randu({2, 2}));
@@ -201,4 +191,34 @@ BOOST_AUTO_TEST_CASE(tile_test) {
     untile(y, {3, 2}, &x);
     BOOST_TEST(x(0, 0) == 6);
     BOOST_TEST(x(0, 1) == 12);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_diff, *boost::unit_test::tolerance(2e-2f)) {
+    auto x = newTensor(TensorValue::randu({1, 2}));
+    auto yValue = TensorValue::randu({1, 2});
+    auto y = newTensor(yValue);
+    auto w = newTensor(TensorValue::randn({2, 2}, 1 / std::sqrt(2)));
+    auto b = newTensor(TensorValue::randn({1, 2}));
+    std::vector<Tensor> params = {w, b};
+    auto out = sigmoid(x * w + b);
+    auto lossTensor = halfSumSquares(out - y) + halfSumSquares(w);
+
+    auto numericDiff = [&](Tensor& x, size_t i, size_t j) {
+        const float eps = 1e-4;
+        float old;
+        mutate(x, [&](TensorValue& x) { old = x(i, j); x(i, j) += eps; });
+        const float a = eval(lossTensor).toScalar();
+        mutate(x, [&](TensorValue& x) { x(i, j) = old; });
+        const float b = eval(lossTensor).toScalar();
+        return (a - b) / eps;
+    };
+
+    auto dLoss = compile(diff(lossTensor, params), {});
+    auto diffs = dLoss();
+    BOOST_TEST(diffs[0](0, 0) == numericDiff(w, 0, 0));
+    BOOST_TEST(diffs[0](0, 1) == numericDiff(w, 0, 1));
+    BOOST_TEST(diffs[0](1, 0) == numericDiff(w, 1, 0));
+    BOOST_TEST(diffs[0](1, 1) == numericDiff(w, 1, 1));
+    BOOST_TEST(diffs[1](0, 0) == numericDiff(b, 0, 0));
+    BOOST_TEST(diffs[1](0, 1) == numericDiff(b, 0, 1));
 }
