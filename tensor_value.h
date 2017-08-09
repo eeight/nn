@@ -74,8 +74,10 @@ class ConstTensorRef : public detail::ConstTensorBase<ConstTensorRef> {
 public:
     /* implicit */ ConstTensorRef(const TensorValue& value);
     /* implicit */ ConstTensorRef(const TensorRef& ref);
+    ConstTensorRef(Shape shape, const float* data);
 
     const float* data() const { return data_; }
+    ConstTensorRef reshape(Shape shape) const;
 private:
     const float* data_;
 };

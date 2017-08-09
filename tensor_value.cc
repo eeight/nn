@@ -216,12 +216,23 @@ TensorValue TensorValue::randu(const Shape& shape) {
 }
 
 ConstTensorRef::ConstTensorRef(const TensorValue& value) :
-    detail::ConstTensorBase<ConstTensorRef>(value.shape()), data_(value.data())
+    ConstTensorRef(value.shape(), value.data())
 {}
 
 ConstTensorRef::ConstTensorRef(const TensorRef& ref) :
-    detail::ConstTensorBase<ConstTensorRef>(ref.shape()), data_(ref.data())
+    ConstTensorRef(ref.shape(), ref.data())
 {}
+
+ConstTensorRef::ConstTensorRef(Shape shape, const float* data) :
+    detail::ConstTensorBase<ConstTensorRef>(std::move(shape)), data_(data)
+{}
+
+ConstTensorRef ConstTensorRef::reshape(Shape shape) const {
+    if (shape.size() != this->shape().size()) {
+        throw std::logic_error("ConstTensorRef::reshape: size mismatch");
+    }
+    return ConstTensorRef{std::move(shape), data_};
+}
 
 TensorRef::TensorRef(TensorValue& value) :
     TensorRef(&value)

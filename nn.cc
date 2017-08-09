@@ -2,6 +2,7 @@
 
 #include "ad.h"
 
+#include <iostream>
 #include <random>
 
 namespace {

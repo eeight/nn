@@ -4,19 +4,17 @@
 
 #include <mpark/variant.hpp>
 
+#include <deque>
 #include <vector>
-#include <iostream>
 
 namespace detail {
 
-struct ArgRef { size_t index; };
-struct ResultRef { size_t index; };
-struct TmpRef { size_t index; };
-struct VarRef { const TensorValue* value; };
-struct ConstRef { const TensorValue* value; };
+struct ArgRef {
+    size_t index;
+    Shape shape;
+};
 
-using ReadRef = mpark::variant<ArgRef, ResultRef, TmpRef, VarRef, ConstRef>;
-using WriteRef = mpark::variant<ResultRef, TmpRef>;
+using ReadRef = mpark::variant<ArgRef, ConstTensorRef>;
 
 struct NegateTranspose {
     bool negate = false;
@@ -50,7 +48,7 @@ using VmOp = mpark::variant<
 struct Statement {
     VmOp op;
     std::vector<ReadRef> args;
-    WriteRef result;
+    TensorRef result;
 };
 
 } // namespace detail
@@ -63,7 +61,7 @@ public:
 
     Program(
             std::vector<detail::Statement> program,
-            std::vector<TensorValue> tmp,
+            std::deque<TensorValue> tmp,
             std::vector<TensorValue> result,
             std::vector<std::shared_ptr<Expr>> retainer) :
         program_(std::move(program)),
@@ -77,7 +75,7 @@ public:
 private:
     std::vector<detail::Statement> program_;
     // TODO(eeight) reuse tmp space
-    std::vector<TensorValue> tmp_;
+    std::deque<TensorValue> tmp_;
     std::vector<TensorValue> result_;
     std::vector<std::shared_ptr<Expr>> retainer_;
 };

@@ -1,21 +1,33 @@
 #include "program.h"
 
-#include <unordered_map>
+#include <iostream>
 #include <type_traits>
+#include <unordered_map>
 
 namespace {
 
-template <class ReadRefResolver, class WriteRefResolver>
+struct Reshaper {
+    detail::ReadRef operator()(const detail::ArgRef& ref) {
+        return detail::ArgRef{ref.index, std::move(shape)};
+    }
+
+    detail::ReadRef operator()(const ConstTensorRef& ref) {
+        return ref.reshape(std::move(shape));
+    }
+
+    Shape shape;
+};
+
 struct StatementExecutor {
-    void operator()(const Tile& t) const {
+    void operator()(const Tile& t) {
         tile(x(), t.multiplier, result());
     }
 
-    void operator()(const Untile& u) const {
+    void operator()(const Untile& u) {
         untile(x(), u.multiplier, result());
     }
 
-    void operator()(const detail::FusedBinaryOp& binary) const {
+    void operator()(const detail::FusedBinaryOp& binary) {
         const auto& xMod = binary.xMod;
         const auto& yMod = binary.yMod;
 
@@ -60,66 +72,77 @@ struct StatementExecutor {
         }
     }
 
-    void operator()(const Conv2D& conv) const {
+    void operator()(const Conv2D& conv) {
         conv2d(x(), y(), conv, result());
     }
 
-    void operator()(const MaxPool& m) const {
+    void operator()(const MaxPool& m) {
         maxPool(x(), m.pool, result());
     }
 
-    void operator()(const MaxPoolDiff& m) const {
+    void operator()(const MaxPoolDiff& m) {
         maxPoolDiff(x(), y(), z(), m.pool, result());
     }
 
-    void operator()(const Pow& p) const {
+    void operator()(const Pow& p) {
         pow(x(), p.y, result());
     }
 
-    void operator()(const Exp&) const {
+    void operator()(const Exp&) {
         exp(x(), result());
     }
 
-    void operator()(const Log&) const {
+    void operator()(const Log&) {
         log(x(), result());
     }
 
-    void operator()(const Copy&) const {
-        *result() = x();
+    void operator()(const Copy&) {
+        std::copy(x().data(), x().dataEnd(), result().data());
     }
 
-    void operator()(const Negate&) const {
+    void operator()(const Negate&) {
         negate(x(), result());
     }
 
-    void operator()(const Transpose&) const {
+    void operator()(const Transpose&) {
         transpose(x(), result());
     }
 
-    void operator()(const Reverse&) const {
+    void operator()(const Reverse&) {
         reverse(x(), result());
     }
 
-    void operator()(const Reshape&) const {
+    void operator()(const Reshape&) {
         reshape(x(), result());
     }
 
-    void operator()(const Sigmoid&) const {
+    void operator()(const Sigmoid&) {
         sigmoid(x(), result());
     }
 
-    void operator()(const HalfSumSquares&) const {
+    void operator()(const HalfSumSquares&) {
         halfSumSquares(x(), result());
     }
 
-    TensorValue* result() const { return writeRefResolver(stmt.result); }
-    const TensorValue& x() const { return *readRefResolver(stmt.args.at(0)); }
-    const TensorValue& y() const { return *readRefResolver(stmt.args.at(1)); }
-    const TensorValue& z() const { return *readRefResolver(stmt.args.at(2)); }
+    TensorRef&& result() { return std::move(stmt.result); }
+    ConstTensorRef x() { return argAt(0); }
+    ConstTensorRef y() { return argAt(1); }
+    ConstTensorRef z() { return argAt(2); }
 
-    ReadRefResolver readRefResolver;
-    WriteRefResolver writeRefResolver;
-    const detail::Statement& stmt;
+    ConstTensorRef argAt(size_t index) {
+        return mpark::visit(*this, stmt.args.at(index));
+    }
+
+    ConstTensorRef operator()(const detail::ArgRef& ref) {
+        return *args.at(ref.index);
+    }
+
+    ConstTensorRef operator()(const ConstTensorRef& ref) {
+        return ref;
+    }
+
+    detail::Statement& stmt;
+    const std::vector<const TensorValue *>& args;
 };
 
 struct StatementFuser {
@@ -214,7 +237,7 @@ private:
         program_.push_back({
             detail::VmOp{Copy{}},
             std::vector<detail::ReadRef>{ref},
-            detail::WriteRef{detail::ResultRef{iter->second}}});
+            TensorRef{result_.at(iter->second)}});
         return ref;
     }
 
@@ -234,39 +257,42 @@ private:
         // Deal with variable refs.
         if (const auto var = mpark::get_if<Var>(&expr->op)) {
             retainer_.push_back(expr);
-            return addCopyStatement(expr.get(), detail::VarRef{&var->value});
+            return addCopyStatement(expr.get(), ConstTensorRef{var->value});
         } else if (const auto ph = mpark::get_if<Placeholder>(&expr->op)) {
             auto iter = argToIndex_.find(ph);
             if (iter == argToIndex_.end()) {
                 throw std::runtime_error("Unbound variable");
             }
-            return addCopyStatement(expr.get(), detail::ArgRef{iter->second});
+            return addCopyStatement(
+                    expr.get(), detail::ArgRef{iter->second, expr->shape});
         } else if (const auto konst = mpark::get_if<Const>(&expr->op)) {
             retainer_.push_back(expr);
-            return addCopyStatement(expr.get(), detail::ConstRef{&konst->value});
+            return addCopyStatement(expr.get(), ConstTensorRef{&konst->value});
+        }
+
+        if (const auto reshape = mpark::get_if<Reshape>(&expr->op)) {
+            return mpark::visit(Reshaper{expr->shape}, doCompile(expr->args.at(0)));
         }
 
         const auto shape = expr->shape;
         auto iter = exprToResultIndex_.find(expr.get());
-        const auto ref = [&]() -> detail::WriteRef {
+        const auto ref = [&]() -> TensorRef {
             if (iter == exprToResultIndex_.end()) {
                 // Allocate new tensor.
                 tmp_.push_back(TensorValue::zeros(shape));
 
-                return detail::TmpRef{tmp_.size() - 1};
+                return tmp_.back();
             } else {
-                return detail::ResultRef{iter->second};
+                return result_.at(iter->second);
             }
         }();
 
         fuseStatement(expr.get(), ref);
 
-        // Cast write ref to read ref.
-        return mpark::visit(
-                [](auto ref) -> detail::ReadRef { return ref; }, ref);
+        return ConstTensorRef{ref};
     }
 
-    void fuseStatement(const Expr* expr, const detail::WriteRef& ref) {
+    void fuseStatement(const Expr* expr, TensorRef ref) {
         StatementFuser fuser{expr->args};
         const auto op = mpark::visit(fuser, expr->op);
 
@@ -274,7 +300,7 @@ private:
         for (const auto& arg: fuser.args) {
             args.push_back(compile(arg));
         }
-        program_.push_back({op, std::move(args), ref});
+        program_.push_back({op, std::move(args), std::move(ref)});
     }
 
     std::vector<Tensor> targets_;
@@ -283,61 +309,30 @@ private:
 
     std::unordered_map<const Expr*, detail::ReadRef> compiled_;
     std::vector<detail::Statement> program_;
-    std::vector<TensorValue> tmp_;
+    std::deque<TensorValue> tmp_;
     std::vector<TensorValue> result_;
     std::vector<std::shared_ptr<Expr>> retainer_;
 };
 
 template <class Result>
 struct RefResolver {
-    Result operator()(const detail::ArgRef& ref) const {
-        return args.at(ref.index);
-    }
-
-    Result operator()(const detail::ResultRef& ref) const {
-        return &result.at(ref.index);
-    }
-
-    Result operator()(const detail::TmpRef& ref) const {
-        return &tmp.at(ref.index);
-    }
-
-    Result operator()(const detail::VarRef& ref) const {
-        return ref.value;
-    }
-
-    Result operator()(const detail::ConstRef& ref) const {
-        return ref.value;
-    }
-
-    const std::vector<const TensorValue *>& args;
-    std::vector<TensorValue>& result;
-    std::vector<TensorValue>& tmp;
 };
 
 struct PrettyPrinter {
-    void operator()(const detail::ResultRef& ref) const {
-        out << "result[" << ref.index << "]";
+    void operator()(const ConstTensorRef& ref) const {
+        if (ref.shape().isScalar()) {
+            out << "const(" << ref.toScalar() << ")";
+        } else {
+            out << "ref(" << ref.data() << ")";
+        }
     }
 
-    void operator()(const detail::TmpRef& ref) const {
-        out << "tmp[" << ref.index << "]";
+    void operator()(const TensorRef& ref) const {
+        out << "ref(" << ref.data() << ")";
     }
 
     void operator()(const detail::ArgRef& ref) const {
         out << "arg[" << ref.index << "]";
-    }
-
-    void operator()(const detail::VarRef& ref) const {
-        out << "var(" << ref.value << ")";
-    }
-
-    void operator()(const detail::ConstRef& ref) const {
-        if (ref.value->shape().isScalar()) {
-            out << "const(" << ref.value->toScalar() << ")";
-        } else {
-            out << "const(" << ref.value << ")";
-        }
     }
 
     void operator()(const Tile& tile) const {
@@ -446,22 +441,8 @@ Program compile(
 
 const std::vector<TensorValue>& Program::operator()(
         const std::vector<const TensorValue*>& args) {
-    auto resolveRead = [&](const detail::ReadRef& ref) {
-        return mpark::visit(
-                RefResolver<const TensorValue *>{args, result_, tmp_},
-                ref);
-    };
-    auto resolveWrite = [&](const detail::WriteRef& ref) {
-        return mpark::visit(
-                RefResolver<TensorValue *>{args, result_, tmp_},
-                ref);
-    };
     for (auto& statement: program_) {
-        mpark::visit(
-                StatementExecutor<
-                    decltype(resolveRead),
-                    decltype(resolveWrite)>
-                {resolveRead, resolveWrite, statement}, statement.op);
+        mpark::visit(StatementExecutor{statement, args}, statement.op);
     }
     return result_;
 }
@@ -469,7 +450,7 @@ const std::vector<TensorValue>& Program::operator()(
 std::ostream& operator <<(std::ostream& out, const Program& program) {
     PrettyPrinter pp{out};
     for (const auto& s: program.program_) {
-        mpark::visit(pp, s.result);
+        pp(s.result);
         out << " = ";
         mpark::visit(pp, s.op);
         out << "(";
