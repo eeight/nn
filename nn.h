@@ -11,11 +11,7 @@ using LossFunction = Tensor (*)(const Tensor&, const Tensor&);
 
 class NN {
 public:
-    NN(
-            Tensor input,
-            Tensor output,
-            std::vector<Tensor> bias,
-            std::vector<Tensor> weights);
+    NN(Tensor input, Tensor output, std::vector<Tensor> paras);
 
     TensorValue predict(const TensorValue& input) const;
 
@@ -39,8 +35,6 @@ public:
 
     Tensor input_;
     Tensor output_;
-    std::vector<Tensor> bias_;
-    std::vector<Tensor> weights_;
     std::vector<Tensor> params_;
     mutable Program eval_;
 };

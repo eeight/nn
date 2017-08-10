@@ -17,26 +17,27 @@ public:
     {}
 
     void addFullyConnectedLayer(size_t size) {
-        bias_.push_back(newTensor(TensorValue::randn({1, size})));
         const size_t lastLayerSize = output_.shape().dropDim().size();
         const size_t miniBatchSize = input_.shape()(0);
-        weights_.push_back(newTensor(
-                    TensorValue::randn(
-                        {lastLayerSize, size},
-                        1.0f / std::sqrt(static_cast<float>(lastLayerSize)))));
+        auto bias = newTensor(TensorValue::randn({1, size}));
+        auto weights = newTensor(
+            TensorValue::randn(
+                {lastLayerSize, size},
+                1.0f / std::sqrt(static_cast<float>(lastLayerSize))));
         output_ = sigmoid(
-                output_.reshape({miniBatchSize, lastLayerSize}) * weights_.back() +
-                bias_.back());
+                output_.reshape({miniBatchSize, lastLayerSize}) * weights +
+                bias);
+        params_.push_back(bias);
+        params_.push_back(weights);
     }
 
     NN build() {
-        return NN(input_, output_, bias_, weights_);
+        return NN(input_, output_, params_);
     }
 
     Tensor input_;
     Tensor output_;
-    std::vector<Tensor> bias_;
-    std::vector<Tensor> weights_;
+    std::vector<Tensor> params_;
 };
 
 int main()

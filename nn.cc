@@ -58,25 +58,12 @@ float evaluate(
     return (float)correct / total;
 }
 
-template <class T>
-std::vector<T> concat(const std::vector<T>& x, const std::vector<T>& y) {
-    std::vector<T> result = x;
-    result.insert(result.end(), y.begin(), y.end());
-    return result;
-}
-
 } // namespace
 
-NN::NN(
-        Tensor input,
-        Tensor output,
-        std::vector<Tensor> bias,
-        std::vector<Tensor> weights) :
+NN::NN(Tensor input, Tensor output, std::vector<Tensor> params) :
     input_(std::move(input)),
     output_(std::move(output)),
-    bias_(std::move(bias)),
-    weights_(std::move(weights)),
-    params_(concat(bias_, weights_)),
+    params_(std::move(params)),
     eval_(compile({output}, {input_}))
 {
     std::cout << "Eval: " << eval_;
@@ -95,7 +82,7 @@ void NN::fit(
         float lambda) {
     auto target = newPlaceholder(output_.shape());
     Tensor regularizer = newTensor(TensorValue{0.0f});
-    for (const auto& w: weights_) {
+    for (const auto& w: params_) {
         regularizer = regularizer + halfSumSquares(w);
     }
     Tensor loss =
