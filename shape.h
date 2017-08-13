@@ -21,6 +21,9 @@ public:
 
     size_t dim() const { return dim_.size(); }
 
+    auto begin() const { return dim_.begin(); }
+    auto end() const { return dim_.end(); }
+
     size_t operator()(size_t i) const { return dim_.at(i); }
 
     bool operator ==(const Shape& other) const {
@@ -52,8 +55,11 @@ public:
         return dim_.size() == 3;
     }
 
-    Shape addDim(size_t size) const;
-    Shape dropDim() const;
+    Shape addFirstDim(size_t size) const;
+    Shape dropFirstDim(size_t n = 1) const;
+
+    Shape dropLastDim(size_t n = 1) const;
+    Shape takeLastDim(size_t n) const;
 
     std::string toString() const;
 

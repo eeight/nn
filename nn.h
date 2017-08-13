@@ -23,8 +23,8 @@ public:
             LossFunction lossFunction,
             float lambda);
 
-    Shape inputShape() const { return input_.shape().dropDim(); }
-    Shape outputShape() const { return output_.shape().dropDim(); }
+    Shape inputShape() const { return input_.shape().dropFirstDim(); }
+    Shape outputShape() const { return output_.shape().dropFirstDim(); }
     size_t miniBatchSize() const { return input_.shape()(0); }
 
 public:

@@ -37,13 +37,12 @@ using VmOp = mpark::variant<
     Copy,
     Negate,
     Transpose,
-    Reshape,
     Sigmoid,
     HalfSumSquares,
     Conv2D,
     Reverse,
-    MaxPool,
-    MaxPoolDiff>;
+    MaxPool2D,
+    MaxPool2DDiff>;
 
 struct Statement {
     VmOp op;

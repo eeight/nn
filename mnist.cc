@@ -50,10 +50,10 @@ std::vector<TensorValue> read(const std::string& path) {
     const size_t cols = nextInt(in);
     std::vector<unsigned char> bytes(cols * rows);
     for (size_t i = 0; i != imagesNumber; ++i) {
+        images.push_back(TensorValue::zeros({rows, cols}));
         in.read(reinterpret_cast<char *>(bytes.data()), bytes.size());
-        images.push_back(TensorValue::zeros({rows * cols}));
         for (size_t j = 0; j != bytes.size(); ++j) {
-            images.back()(j) = bytes[j] / 255.0;
+            images.back().data()[j] = bytes[j] / 255.0;
         }
     }
 

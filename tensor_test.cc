@@ -27,7 +27,6 @@ TensorValue row(std::initializer_list<float> values) {
     std::copy(values.begin(), values.end(), x.data());
     return x;
 }
-#if 0
 
 BOOST_AUTO_TEST_CASE(const_tensor) {
     const auto m = TensorValue::randu({10, 10});
@@ -83,7 +82,6 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_scalar) {
         lossValue = nextLossValue;
     }
 }
-#endif
 
 BOOST_AUTO_TEST_CASE(decreasing_loss_matrix) {
     auto x = newPlaceholder({1, 2});
@@ -148,12 +146,12 @@ BOOST_AUTO_TEST_CASE(decreasing_loss_matrix_with_activation) {
 }
 
 BOOST_AUTO_TEST_CASE(convolution) {
-    auto a = newTensor(TensorValue::randu({5, 5}));
-    auto k = newTensor(TensorValue::randu({2, 2}));
-    auto t = newTensor(TensorValue::randu({2, 2}));
+    auto a = newTensor(TensorValue::randu({1, 5, 5}));
+    auto k = newTensor(TensorValue::randu({1, 2, 2}));
+    auto t = newTensor(TensorValue::randu({1, 1, 2, 2}));
 
     auto loss = halfSumSquares(
-            maxPool(conv2d(a, k, /* sameSize = */ false), {2, 2}) - t);
+            maxPool2d(conv2d(a, k, /* sameSize = */ false), 2, 2) - t);
     auto dLoss = compile(diff(loss, {k}), {});
 
     const float eta = 0.05;

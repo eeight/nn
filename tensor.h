@@ -49,15 +49,15 @@ Tensor operator /(const Tensor& x, const Tensor& y);
 Tensor operator +(const Tensor& x, const Tensor& y);
 Tensor operator -(const Tensor& x, const Tensor& y);
 
-// 2D convolution of a using kernel k result.
+// 2D convolution of a using kernel k result
+// Inputs:
+//  a: shape (mini batch size, n_rows, n_cols)
+//  k: shape (n_features, n_kernel_rows, n_kernel_cols)
+//  output: shape (mini batch size, n_features, n_result_rows, n_result_rows)
 Tensor conv2d(const Tensor& a, const Tensor& kernel, bool sameSize);
-// Same as above but with explicit padding.
-Tensor conv2d(
-        const Tensor& a,
-        const Tensor& k,
-        const Conv2D& conv);
+Tensor conv2d(const Tensor& a, const Tensor& k, const Conv2D& conv);
 
-Tensor maxPool(const Tensor& a, Shape pool);
+Tensor maxPool2d(const Tensor& a, size_t rows, size_t cols);
 
 // Computes x to the power of y.
 // x must be a scalar

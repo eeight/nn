@@ -12,25 +12,24 @@ size_t maxIndex(const float* x, size_t size) {
 }
 
 template <class F>
-void forEachBatch(
-        const std::vector<Sample>& samples,
-        size_t batchSize,
-        F f) {
-    const size_t inputSize = samples.front().x.shape()(0);
-    const size_t outputSize = samples.front().y.shape()(0);
+void forEachBatch(const std::vector<Sample>& samples, size_t batchSize, F f) {
+    auto batchInput = TensorValue::zeros(
+            samples.front().x.shape().addFirstDim(batchSize));
+    auto batchTarget = TensorValue::zeros(
+            samples.front().y.shape().addFirstDim(batchSize));
+    const size_t sampleInputSize = samples.front().x.shape().size();
+    const size_t sampleOutputSize = samples.front().y.shape().size();
 
     for (size_t i = 0; i + batchSize <= samples.size(); i += batchSize) {
-        auto batchInput = TensorValue::zeros({batchSize, inputSize});
-        auto batchTarget = TensorValue::zeros({batchSize, outputSize});
         for (size_t j = 0; j != batchSize; ++j) {
             std::copy(
                     samples[i + j].x.data(),
                     samples[i + j].x.dataEnd(),
-                    &batchInput(j, 0));
+                    batchInput.data() + j * sampleInputSize);
             std::copy(
                     samples[i + j].y.data(),
                     samples[i + j].y.dataEnd(),
-                    &batchTarget(j, 0));
+                    batchTarget.data() + j * sampleOutputSize);
         }
 
         f(batchInput, batchTarget);
@@ -49,8 +48,7 @@ float evaluate(
             const size_t rows = batchTarget.shape()(0);
             const size_t cols = batchTarget.shape()(1);
             for (size_t i = 0; i != rows; ++i) {
-                correct +=
-                        maxIndex(&output(i, 0), cols) ==
+                correct += maxIndex(&output(i, 0), cols) ==
                         maxIndex(&batchTarget(i, 0), cols);
                 ++total;
             }

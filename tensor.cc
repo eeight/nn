@@ -67,6 +67,44 @@ Tensor makeShapePreservingMutator(const Tensor& x, Op mutator) {
                 x.shape(), std::move(mutator), x.unwrap()));
 }
 
+Tensor tile(Shape multiplier, const Tensor& tensor) {
+    if (multiplier.dim() != tensor.shape().dim()) {
+        throw std::logic_error("tile: multiplier and tensor shape mismatch: " +
+                multiplier.toString() + " and " + tensor.shape().toString());
+    }
+    if (multiplier.size() == 1) {
+        return tensor;
+    }
+
+    std::vector<size_t> dim(multiplier.dim());
+    for (size_t i = 0; i != dim.size(); ++i) {
+        dim[i] = multiplier(i) * tensor.shape()(i);
+    }
+
+    return Tensor(std::make_shared<Expr>(
+                Shape{std::move(dim)},
+                Tile{std::move(multiplier)},
+                tensor.unwrap()));
+}
+
+std::pair<Tensor, Tensor> cross(const Tensor& a, const Tensor& b) {
+    const size_t a0 = a.shape()(0);
+    const size_t b0 = b.shape()(0);
+
+    std::vector<size_t> tileA = {1, b0};
+    tileA.insert(tileA.end(), a.shape().dim() - 1, 1);
+
+    std::vector<size_t> tileB = {a0, 1};
+    tileB.insert(tileB.end(), b.shape().dim() - 1, 1);
+
+    return {
+        tile(Shape{
+                std::move(tileA)},
+                a.reshape(
+                    a.shape().dropFirstDim().addFirstDim(1).addFirstDim(a0))),
+        tile(Shape{std::move(tileB)}, b.reshape(b.shape().addFirstDim(1)))};
+}
+
 } // namespace
 
 Tensor::Tensor(std::shared_ptr<Expr> expr) :
@@ -200,49 +238,87 @@ Tensor operator *(const Tensor& x, const Tensor& y) {
 }
 
 Tensor conv2d(const Tensor& a, const Tensor& k, bool sameSize) {
-    if (sameSize) {
-        const size_t kRows = k.shape()(0);
-        const size_t kCols = k.shape()(1);
-        return conv2d(a, k, {
-                /* padTop = */ kRows / 2,
-                /* padBottom = */ (kRows - 1) / 2,
-                /* padLeft = */ kCols / 2,
-                /* padRight = */ (kCols - 1) / 2});
-    } else {
-        return conv2d(a, k, {0, 0, 0, 0});
+    if (a.shape().dim() != k.shape().dim()) {
+        throw std::logic_error(
+                "conv2d: shapes mismatch: " + a.shape().toString() +
+                " and " + k.shape().toString());
     }
+    if (a.shape().dim() != 3) {
+        throw std::logic_error(
+                "conv2d: expected a cube, got " + a.shape().toString());
+    }
+    const auto pad = [&]() -> Conv2D {
+        if (sameSize) {
+            const size_t dim = k.shape().dim();
+            const size_t kRows = k.shape()(dim - 2);
+            const size_t kCols = k.shape()(dim - 1);
+            return {
+                    /* padTop = */ kRows / 2,
+                    /* padBottom = */ (kRows - 1) / 2,
+                    /* padLeft = */ kCols / 2,
+                    /* padRight = */ (kCols - 1) / 2};
+        } else {
+            return {0, 0, 0, 0};
+        }
+    }();
+
+    auto [ac, kc] = cross(a, k);
+
+    return conv2d(ac, kc, pad);
 }
 
-Tensor conv2d(
-        const Tensor& a,
-        const Tensor& k,
-        const Conv2D& conv) {
-    const size_t aRows = a.shape()(0);
-    const size_t aCols = a.shape()(1);
-    const size_t kRows = k.shape()(0);
-    const size_t kCols = k.shape()(1);
+Tensor conv2d(const Tensor& a, const Tensor& k, const Conv2D& conv) {
+    if (a.shape().dim() != k.shape().dim()) {
+        throw std::logic_error(
+                "conv2d: shapes mismatch: " + a.shape().toString() +
+                " and " + k.shape().toString());
+    }
+    if (a.shape().dim() < 2) {
+        throw std::logic_error(
+                "conv2d: need at least two dimensions, got " +
+                a.shape().toString());
+    }
+    std::vector<size_t> shape;
+    for (size_t i = 0; i + 2 != a.shape().dim(); ++i) {
+        if (a.shape()(i) != k.shape()(i)) {
+            throw std::logic_error(
+                    "conv2d: shape mismatch: " + a.shape().toString() +
+                    " and " + k.shape().toString());
+        }
+        shape.push_back(a.shape()(i));
+    }
+    const size_t dim = a.shape().dim();
+
+    const size_t aRows = a.shape()(dim - 2);
+    const size_t aCols = a.shape()(dim - 1);
+    const size_t kRows = k.shape()(dim - 2);
+    const size_t kCols = k.shape()(dim - 1);
+    shape.push_back(aRows + conv.padTop + conv.padBottom + 1 - kRows);
+    shape.push_back(aCols + conv.padLeft + conv.padRight + 1 - kCols);
     return Tensor(std::make_shared<Expr>(
-                Shape{
-                    aRows + conv.padTop + conv.padBottom + 1 - kRows,
-                    aCols + conv.padLeft + conv.padRight + 1 - kCols},
-                conv,
-                a.unwrap(),
-                k.unwrap()));
+                Shape{std::move(shape)}, conv, a.unwrap(), k.unwrap()));
 }
 
-Tensor maxPool(const Tensor& a, Shape pool) {
-    requireCompatible(
-            a.shape().dim() == pool.dim(), "maxPool", a.shape(), pool);
-
-    std::vector<size_t> dim;
-    for (size_t i = 0; i != pool.dim(); ++i) {
-        requireCompatible(
-                a.shape()(i) % pool(i) == 0, "maxPool", a.shape(), pool);
-        dim.push_back(a.shape()(i) / pool(i));
+Tensor maxPool2d(const Tensor& a, size_t rows, size_t cols) {
+    if (a.shape().dim() < 2) {
+        throw std::logic_error(
+                "maxPool2d: Expected tensor with at least "
+                "two dimensions, got " + a.shape().toString());
     }
+
+    std::vector<size_t> dim(a.shape().begin(), a.shape().end());
+    if (dim[dim.size() - 2] % rows || dim.back() % cols) {
+        throw std::logic_error(
+                "maxPool2d: Tensor with shape " + a.shape().toString() +
+                " is incompatible with max pool of (" + std::to_string(rows) +
+                ", " + std::to_string(cols) + ")");
+    }
+    dim[dim.size() - 2] /= rows;
+    dim.back() /= cols;
+
     return Tensor(std::make_shared<Expr>(
                 Shape{std::move(dim)},
-                MaxPool{std::move(pool)},
+                MaxPool2D{rows, cols},
                 a.unwrap()));
 }
 

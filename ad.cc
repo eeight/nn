@@ -64,10 +64,10 @@ struct PartialDiff {
         }
     }
 
-    Tensor operator()(const MaxPool& maxPool) const {
+    Tensor operator()(const MaxPool2D& maxPool) const {
         return Tensor(std::make_shared<Expr>(
                 xShape(),
-                MaxPoolDiff{maxPool.pool},
+                MaxPool2DDiff{maxPool.rows, maxPool.cols},
                 x().unwrap(),
                 self.unwrap(),
                 selfPartial.unwrap()));

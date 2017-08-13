@@ -76,12 +76,12 @@ struct StatementExecutor {
         conv2d(x(), y(), conv, result());
     }
 
-    void operator()(const MaxPool& m) {
-        maxPool(x(), m.pool, result());
+    void operator()(const MaxPool2D& m) {
+        maxPool2d(x(), m.rows, m.cols, result());
     }
 
-    void operator()(const MaxPoolDiff& m) {
-        maxPoolDiff(x(), y(), z(), m.pool, result());
+    void operator()(const MaxPool2DDiff& m) {
+        maxPoolDiff2d(x(), y(), z(), m.rows, m.cols, result());
     }
 
     void operator()(const Pow& p) {
@@ -112,10 +112,6 @@ struct StatementExecutor {
         reverse(x(), result());
     }
 
-    void operator()(const Reshape&) {
-        reshape(x(), result());
-    }
-
     void operator()(const Sigmoid&) {
         sigmoid(x(), result());
     }
@@ -134,7 +130,9 @@ struct StatementExecutor {
     }
 
     ConstTensorRef operator()(const detail::ArgRef& ref) {
-        return *args.at(ref.index);
+        return ConstTensorRef{
+            ref.shape,
+            args.at(ref.index)->data()};
     }
 
     ConstTensorRef operator()(const ConstTensorRef& ref) {
@@ -154,6 +152,10 @@ struct StatementFuser {
     template <class T>
     detail::VmOp operator()(const T& t) {
         return t;
+    }
+
+    detail::VmOp operator()(const Reshape&) {
+        throw std::logic_error("Unexpected op in StatementFuser");
     }
 
     detail::VmOp operator()(const Const&) {
@@ -204,11 +206,19 @@ public:
             }
         }
         for (size_t i = 0; i != targets_.size(); ++i) {
-            const auto& target = targets_[i];
-            exprToResultIndex_[target.unwrap().get()] = i;
-            const auto shape = target.shape();
-            // Preallocate result.
-            result_.push_back(TensorValue::zeros(shape));
+            const auto* target = targets_[i].unwrap().get();
+            // Allocate result with correct shape
+            result_.push_back(TensorValue::zeros(target->shape));
+            // Then skip all the reshapes and consider that expression
+            // an actual target computation that would write to the result.
+            while (mpark::get_if<Reshape>(&target->op)) {
+                target = target->args.at(0).get();
+            }
+            if (exprToResultIndex_.count(target)) {
+                throw std::logic_error(
+                        "Compiler: support for aliased results is not implemented");
+            }
+            exprToResultIndex_[target] = i;
         }
     }
 
@@ -271,7 +281,7 @@ private:
         }
 
         if (const auto reshape = mpark::get_if<Reshape>(&expr->op)) {
-            return mpark::visit(Reshaper{expr->shape}, doCompile(expr->args.at(0)));
+            return mpark::visit(Reshaper{expr->shape}, compile(expr->args.at(0)));
         }
 
         const auto shape = expr->shape;
@@ -283,7 +293,7 @@ private:
 
                 return tmp_.back();
             } else {
-                return result_.at(iter->second);
+                return TensorRef{expr->shape, result_.at(iter->second).data()};
             }
         }();
 
@@ -320,11 +330,7 @@ struct RefResolver {
 
 struct PrettyPrinter {
     void operator()(const ConstTensorRef& ref) const {
-        if (ref.shape().isScalar()) {
-            out << "const(" << ref.toScalar() << ")";
-        } else {
-            out << "ref(" << ref.data() << ")";
-        }
+        out << "cref(" << ref.data() << ")";
     }
 
     void operator()(const TensorRef& ref) const {
@@ -379,12 +385,12 @@ struct PrettyPrinter {
         out << "conv2";
     }
 
-    void operator()(const MaxPool& maxPool) const {
-        out << "maxPool<" << maxPool.pool.toString() << ">";
+    void operator()(const MaxPool2D& maxPool) const {
+        out << "maxPool2d<" << maxPool.rows << ", " << maxPool.cols << ">";
     }
 
-    void operator()(const MaxPoolDiff& maxPool) const {
-        out << "maxPoolDiff<" << maxPool.pool.toString() << ">";
+    void operator()(const MaxPool2DDiff& maxPool) const {
+        out << "maxPoolDiff2d<" << maxPool.rows << ", " << maxPool.cols << ">";
     }
 
     void operator()(const Pow& pow) {
@@ -413,10 +419,6 @@ struct PrettyPrinter {
 
     void operator()(const Reverse&) {
         out << "reverse";
-    }
-
-    void operator()(const Reshape&) {
-        out << "reshape";
     }
 
     void operator()(const Sigmoid&) {

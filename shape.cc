@@ -29,7 +29,7 @@ size_t Shape::size() const {
             std::multiplies<size_t>());
 }
 
-Shape Shape::addDim(size_t size) const {
+Shape Shape::addFirstDim(size_t size) const {
     std::vector<size_t> dim;
     dim.reserve(dim_.size() + 1);
     dim.push_back(size);
@@ -37,11 +37,28 @@ Shape Shape::addDim(size_t size) const {
     return Shape{std::move(dim)};
 }
 
-Shape Shape::dropDim() const {
-    if (isScalar()) {
-        throw std::logic_error("Cannot apply dropDim to a scalar");
+Shape Shape::dropFirstDim(size_t n) const {
+    if (dim() < n) {
+        throw std::logic_error(
+                "Cannot apply dropFirstDim(" + std::to_string(n) + ") to shape " + toString());
     }
-    return Shape{std::vector<size_t>{dim_.begin() + 1, dim_.end()}};
+    return Shape{std::vector<size_t>{dim_.begin() + n, dim_.end()}};
+}
+
+Shape Shape::dropLastDim(size_t n) const {
+    if (dim() < n) {
+        throw std::logic_error(
+                "Cannot apply dropLastDim(" + std::to_string(n) + ") to shape " + toString());
+    }
+    return Shape{std::vector<size_t> (dim_.begin(), dim_.end() - n)};
+}
+
+Shape Shape::takeLastDim(size_t n) const {
+    if (dim() < n) {
+        throw std::logic_error(
+                "Cannot apply takeLastDim(" + std::to_string(n) + ") to shape " + toString());
+    }
+    return dropFirstDim(dim() - n);
 }
 
 std::string Shape::toString() const {

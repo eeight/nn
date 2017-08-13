@@ -5,7 +5,6 @@
 #include <numeric>
 #include <random>
 #include <stdexcept>
-#include <iostream>
 
 #include <cblas.h>
 
@@ -76,6 +75,85 @@ TensorValue randomTensor(const Shape& shape, Dist&& dist) {
     return TensorValue{shape, std::move(data)};
 }
 
+void conv2dSimple(
+        const ConstTensorRef& a,
+        const ConstTensorRef& k,
+        const Conv2D& conv,
+        TensorRef&& result) {
+    assert(a.shape().dim() == 2);
+    assert(k.shape().dim() == 2);
+    assert(result.shape().dim() == 2);
+    const size_t kRows = k.shape()(0);
+    const size_t kCols = k.shape()(1);
+
+    for (size_t row = 0; row < result.shape()(0); ++row) {
+        for (size_t col = 0; col < result.shape()(1); ++col) {
+            int firstARow = (int)row - conv.padTop;
+            int lastARow = firstARow + kRows;
+            int firstACol = (int)col - conv.padLeft;
+            int lastACol = firstACol + kCols;
+
+            int firstKRow = 0;
+            int firstKCol = 0;
+
+            if (firstARow < 0) {
+                firstKRow = -firstARow;
+                firstARow = 0;
+            }
+            if (lastARow > (int)a.shape()(0)) {
+                lastARow = a.shape()(0);
+            }
+            if (firstACol < 0) {
+                firstKCol = -firstACol;
+                firstACol = 0;
+            }
+            if (lastACol > (int)a.shape()(1)) {
+                lastACol = a.shape()(1);
+            }
+            result(row, col) = dot(
+                    &a(firstARow, firstACol),
+                    a.shape()(0),
+                    &k(firstKRow, firstKCol),
+                    k.shape()(0),
+                    lastARow - firstARow,
+                    lastACol - firstACol);
+        }
+    }
+}
+
+void maxPool2dSimple(
+        const ConstTensorRef& a, size_t poolRows, size_t poolCols, TensorRef&& result) {
+    assert(a.shape().isMatrix());
+    for (size_t row = 0; row != result.shape()(0); ++row) {
+        for (size_t col = 0; col != result.shape()(1); ++col) {
+            float max = -std::numeric_limits<float>::infinity();
+            for (size_t i = 0; i != poolRows; ++i) {
+                for (size_t j = 0; j != poolCols; ++j) {
+                    max = std::max(max, a(row * poolRows + i, col * poolCols + j));
+                }
+            }
+            result(row, col) = max;
+        }
+    }
+}
+
+void maxPoolDiff2dSimple(
+        const ConstTensorRef& a,
+        const ConstTensorRef& poolResult,
+        const ConstTensorRef& poolDiff,
+        size_t poolRows,
+        size_t poolCols,
+        TensorRef&& result) {
+    for (size_t row = 0; row != result.shape()(0); ++row) {
+        const size_t rowPool = row / poolRows;
+        for (size_t col = 0; col != result.shape()(1); ++col) {
+            const size_t colPool = col / poolCols;
+            if (a(row, col) == poolResult(rowPool, colPool)) {
+                result(row, col) = poolDiff(rowPool, colPool);
+            }
+        }
+    }
+}
 } // namespace
 
 namespace detail {
@@ -239,8 +317,19 @@ TensorRef::TensorRef(TensorValue& value) :
 {}
 
 TensorRef::TensorRef(TensorValue* value) :
-    detail::TensorBase<TensorRef>(value->shape()), data_(value->data())
+    TensorRef(value->shape(), value->data())
 {}
+
+TensorRef::TensorRef(Shape shape, float* data) :
+    detail::TensorBase<TensorRef>(std::move(shape)), data_(data)
+{}
+
+TensorRef TensorRef::reshape(Shape shape) const {
+    if (shape.size() != this->shape().size()) {
+        throw std::logic_error("TensorRef::reshape: size mismatch");
+    }
+    return TensorRef{std::move(shape), data_};
+}
 
 template class detail::ConstTensorBase<TensorValue>;
 template class detail::TensorBase<TensorValue>;
@@ -383,10 +472,6 @@ void reverse(const ConstTensorRef& x, TensorRef&& result) {
     }
 }
 
-void reshape(const ConstTensorRef& x, TensorRef&& result) {
-    std::copy(x.data(), x.dataEnd(), result.data());
-}
-
 float accu(const ConstTensorRef& x) {
     return std::accumulate(x.data(), x.dataEnd(), 0.0f);
 }
@@ -400,43 +485,57 @@ void addMultiply(
             std::move(y));
 }
 
+template <class F>
+void foreachIndex(const Shape& shape, F f) {
+    std::vector<size_t> indices(shape.dim(), 0);
+    const size_t size = shape.size();
+    for (size_t i = 1; i != size; ++i) {
+        f(indices);
+        size_t j = 0;
+        for (; indices[j] == shape(j) - 1; ++j) {
+            indices[j] = 0;
+        }
+        ++indices[j];
+    }
+    f(indices);
+}
+
+template <class F>
+void foreachIndexSlice(const Shape& shape, size_t sliceDim, F f) {
+    std::vector<size_t> indices(shape.dim(), 0);
+    const size_t size = shape.dropLastDim(sliceDim).size();
+    for (size_t i = 1; i != size; ++i) {
+        f(indices);
+        size_t j = 0;
+        for (; indices[j] == shape(j) - 1; ++j) {
+            indices[j] = 0;
+        }
+        ++indices[j];
+    }
+    f(indices);
+}
+
 void tile(const ConstTensorRef& x, const Shape& multiplier, TensorRef&& y) {
-    std::vector<size_t> indices(multiplier.dim(), 0);
+    assert(x.shape().dim() == multiplier.dim());
+    assert(y.shape().dim() == multiplier.dim());
     std::vector<size_t> xIndices(multiplier.dim());
-    const size_t size = y.shape().size();
-    for (size_t i = 0; i != size; ++i) {
+    foreachIndex(y.shape(), [&](const std::vector<size_t>& indices) {
         for (size_t j = 0; j != xIndices.size(); ++j) {
             xIndices[j] = indices[j] % x.shape()(j);
         }
         y(indices) = x(xIndices);
-        if (i + 1 != size) {
-            size_t j = 0;
-            for (; indices[j] == y.shape()(j) - 1; ++j) {
-                indices[j] = 0;
-            }
-            ++indices[j];
-        }
-    }
+    });
 }
 
 void untile(const ConstTensorRef& x, const Shape& multiplier, TensorRef&& y) {
-    std::vector<size_t> indices(multiplier.dim(), 0);
     std::vector<size_t> yIndices(multiplier.dim());
-    const size_t size = x.shape().size();
     std::fill(y.data(), y.dataEnd(), 0.0f);
-    for (size_t i = 0; i != size; ++i) {
+    foreachIndex(x.shape(), [&](const std::vector<size_t>& indices) {
         for (size_t j = 0; j != yIndices.size(); ++j) {
             yIndices[j] = indices[j] % y.shape()(j);
         }
         y(yIndices) += x(indices);
-        if (i + 1 != size) {
-            size_t j = 0;
-            for (; indices[j] == x.shape()(j) - 1; ++j) {
-                indices[j] = 0;
-            }
-            ++indices[j];
-        }
-    }
+    });
 }
 
 void sigmoid(const ConstTensorRef& x, TensorRef&& result) {
@@ -456,72 +555,67 @@ void conv2d(
         const ConstTensorRef& k,
         const Conv2D& conv,
         TensorRef&& result) {
-    const size_t kRows = k.shape()(0);
-    const size_t kCols = k.shape()(1);
+    assert(a.shape().dim() == k.shape().dim());
+    assert(a.shape().dim() == result.shape().dim());
+    assert(a.shape().dim() >= 2);
 
-    for (size_t row = 0; row < result.shape()(0); ++row) {
-        for (size_t col = 0; col < result.shape()(1); ++col) {
-            int firstARow = (int)row - conv.padTop;
-            int lastARow = firstARow + kRows;
-            int firstACol = (int)col - conv.padLeft;
-            int lastACol = firstACol + kCols;
-
-            int firstKRow = 0;
-            int firstKCol = 0;
-
-            if (firstARow < 0) {
-                firstKRow = -firstARow;
-                firstARow = 0;
-            }
-            if (lastARow > (int)a.shape()(0)) {
-                lastARow = a.shape()(0);
-            }
-            if (firstACol < 0) {
-                firstKCol = -firstACol;
-                firstACol = 0;
-            }
-            if (lastACol > (int)a.shape()(1)) {
-                lastACol = a.shape()(1);
-            }
-            result(row, col) = dot(
-                    &a(firstARow, firstACol),
-                    a.shape()(0),
-                    &k(firstKRow, firstKCol),
-                    k.shape()(0),
-                    lastARow - firstARow,
-                    lastACol - firstACol);
-        }
+    for (size_t i = 0; i + 2 != a.shape().dim(); ++i) {
+        assert(a.shape()(i) == k.shape()(i));
     }
+
+    foreachIndexSlice(
+            a.shape(),
+            2,
+            [&](const std::vector<size_t>& indices) {
+        conv2dSimple(
+                ConstTensorRef{a.shape().takeLastDim(2), &a(indices)},
+                ConstTensorRef{k.shape().takeLastDim(2), &k(indices)},
+                conv,
+                TensorRef{result.shape().takeLastDim(2), &result(indices)});
+    });
+
 }
 
-void maxPool(
-        const ConstTensorRef& a, const Shape& pool, TensorRef&& result) {
-    for (size_t row = 0; row != result.shape()(0); ++row) {
-        for (size_t col = 0; col != result.shape()(1); ++col) {
-            float max = -std::numeric_limits<float>::infinity();
-            for (size_t i = 0; i != pool(0); ++i) {
-                for (size_t j = 0; j != pool(1); ++j) {
-                    max = std::max(max, a(row * pool(0) + i, col * pool(1) + j));
-                }
-            }
-            result(row, col) = max;
-        }
-    }
+void maxPool2d(
+        const ConstTensorRef& a,
+        size_t poolRows,
+        size_t poolCols,
+        TensorRef&& result) {
+    const auto aSlice = a.shape().takeLastDim(2);
+    const auto resultSlice = result.shape().takeLastDim(2);
+    foreachIndexSlice(
+            a.shape(),
+            2,
+            [&](const std::vector<size_t>& indices) {
+                maxPool2dSimple(
+                    ConstTensorRef{aSlice, &a(indices)},
+                    poolRows,
+                    poolCols,
+                    TensorRef{resultSlice, &result(indices)});
+            });
 }
 
-void maxPoolDiff(
+void maxPoolDiff2d(
         const ConstTensorRef& a,
         const ConstTensorRef& poolResult,
         const ConstTensorRef& poolDiff,
-        const Shape& pool,
+        size_t rows,
+        size_t cols,
         TensorRef&& result) {
-    for (size_t row = 0; row != result.shape()(0); ++row) {
-        const size_t rowPool = row / pool(0);
-        for (size_t col = 0; col != result.shape()(1); ++col) {
-            const size_t colPool = col / pool(1);
-            if (a(row, col) == poolResult(rowPool, colPool)) {
-                result(row, col) = poolDiff(rowPool, colPool);
-            }
-        }
-    }
+    const auto aSlice = a.shape().takeLastDim(2);
+    const auto poolResultSlice = poolResult.shape().takeLastDim(2);
+    const auto poolDiffSlice = poolDiff.shape().takeLastDim(2);
+    const auto resultSlice = result.shape().takeLastDim(2);
+    foreachIndexSlice(
+            a.shape(),
+            2,
+            [&](const std::vector<size_t>& indices) {
+                maxPoolDiff2dSimple(
+                        ConstTensorRef{aSlice, &a(indices)},
+                        ConstTensorRef{poolResultSlice, &poolResult(indices)},
+                        ConstTensorRef{poolDiffSlice, &poolDiff(indices)},
+                        rows,
+                        cols,
+                        TensorRef{resultSlice, &result(indices)});
+            });
 }

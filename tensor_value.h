@@ -18,6 +18,7 @@ public:
     const float& operator()(size_t i) const;
     const float& operator()(size_t i, size_t j) const;
     const float& operator()(size_t i, size_t j, size_t k) const;
+    const float& operator()(size_t i, size_t j, size_t k, size_t w) const;
     const float& operator()(const std::vector<size_t> &indices) const;
 
     float toScalar() const;
@@ -40,6 +41,7 @@ public:
     const float& operator()(size_t i) const;
     const float& operator()(size_t i, size_t j) const;
     const float& operator()(size_t i, size_t j, size_t k) const;
+    const float& operator()(size_t i, size_t j, size_t k, size_t w) const;
     const float& operator()(const std::vector<size_t> &indices) const;
     float& operator()(size_t i);
     float& operator()(size_t i, size_t j);
@@ -86,9 +88,11 @@ class TensorRef : public detail::TensorBase<TensorRef> {
 public:
     /* implicit */ TensorRef(TensorValue& value);
     /* implicit */ TensorRef(TensorValue* value);
+    TensorRef(Shape shape, float* data);
 
     const float* data() const { return data_; }
     float* data() { return data_; }
+    TensorRef reshape(Shape shape) const;
 
 private:
     float* data_;
@@ -133,7 +137,6 @@ void log(const ConstTensorRef& x, TensorRef&& result);
 void negate(const ConstTensorRef& x, TensorRef&& result);
 void transpose(const ConstTensorRef& x, TensorRef&& result);
 void reverse(const ConstTensorRef& x, TensorRef&& result);
-void reshape(const ConstTensorRef& x, TensorRef&& result);
 float accu(const ConstTensorRef& x);
 
 // y += factor * x
@@ -149,11 +152,12 @@ void conv2d(
         const ConstTensorRef& k,
         const Conv2D& conv,
         TensorRef&& result);
-void maxPool(
-        const ConstTensorRef& a, const Shape& pool, TensorRef&& result);
-void maxPoolDiff(
+void maxPool2d(
+        const ConstTensorRef& a, size_t rows, size_t cols, TensorRef&& result);
+void maxPoolDiff2d(
         const ConstTensorRef& a,
         const ConstTensorRef& poolResult,
         const ConstTensorRef& poolDiff,
-        const Shape& pool,
+        size_t rows,
+        size_t cols,
         TensorRef&& result);
