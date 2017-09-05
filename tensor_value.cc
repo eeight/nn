@@ -10,11 +10,20 @@
 
 namespace {
 
+float finite(float x) {
+#ifndef NDEBUG
+    if (!std::isfinite(x)) {
+        abort();
+    }
+#endif
+    return x;
+}
+
 template <class X, class Y, class Op>
 void zipWithImpl(X x, Y y, Op op, TensorRef&& result) {
     const size_t size = result.shape().size();
     for (size_t i = 0; i != size; ++i) {
-        result.data()[i] = op(x(i), y(i));
+        result.data()[i] = finite(op(x(i), y(i)));
     }
 }
 
@@ -41,7 +50,7 @@ void map(const ConstTensorRef& x, Op op, TensorRef&& result) {
     const size_t size = x.shape().size();
 
     for (size_t i = 0; i != size; ++i) {
-        result.data()[i] = op(x.data()[i]);
+        result.data()[i] = finite(op(x.data()[i]));
     }
 }
 
@@ -55,7 +64,7 @@ float dot(
     float result = 0;
     for (size_t i = 0; i != rows; ++i) {
         for (size_t j = 0; j != cols; ++j) {
-            result += a[i * aStride + j] * b[i * bStride + j];
+            finite(result += finite(a[i * aStride + j] * b[i * bStride + j]));
         }
     }
     return result;

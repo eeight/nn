@@ -16,13 +16,14 @@ public:
         output_(input_)
     {}
 
-    void addConvoLayer(size_t kernelSize, size_t features) {
+    void addConvoLayer(size_t kernelSize, size_t features, size_t maxPoolSize) {
         auto kernel = newTensor(TensorValue::randn(
                     {features, kernelSize, kernelSize}));
         output_ = conv2d(output_, kernel, /* sameSize = */false);
-        auto bias = newTensor(TensorValue::randn(
-                    output_.shape().dropFirstDim().addFirstDim(1)));
+        // A random scalar.
+        auto bias = newTensor(TensorValue::randn(Shape{}));
         output_ = sigmoid(output_ + bias);
+        output_ = maxPool2d(output_, maxPoolSize, maxPoolSize);
         params_.push_back(kernel);
         params_.push_back(bias);
     }
@@ -55,7 +56,7 @@ int main()
 {
     _MM_SET_EXCEPTION_MASK(_MM_GET_EXCEPTION_MASK() & ~_MM_MASK_INVALID);
     Builder builder({28, 28}, 10);
-    builder.addConvoLayer(5, 3);
+    builder.addConvoLayer(5, 3, 2);
     builder.addFullyConnectedLayer(100);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();

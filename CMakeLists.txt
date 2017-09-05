@@ -11,7 +11,7 @@ include_directories(
 
 add_subdirectory(contrib/variant)
 
-set(CMAKE_CXX_FLAGS "-Wall -Wextra -Werror")
+set(CMAKE_CXX_FLAGS "-Wall -Wextra -Werror -fno-omit-frame-pointer -march=native")
 set(CMAKE_CXX_STANDARD 17)
 
 add_library(

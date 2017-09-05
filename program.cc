@@ -329,27 +329,27 @@ struct RefResolver {
 };
 
 struct PrettyPrinter {
-    void operator()(const ConstTensorRef& ref) const {
-        out << "cref(" << ref.data() << ")";
+    void operator()(const ConstTensorRef& ref) {
+        out << "cref(" << varName(ref.data()) << ")";
     }
 
-    void operator()(const TensorRef& ref) const {
-        out << "ref(" << ref.data() << ")";
+    void operator()(const TensorRef& ref) {
+        out << "ref(" << varName(ref.data()) << ")";
     }
 
-    void operator()(const detail::ArgRef& ref) const {
+    void operator()(const detail::ArgRef& ref) {
         out << "arg[" << ref.index << "]";
     }
 
-    void operator()(const Tile& tile) const {
+    void operator()(const Tile& tile) {
         out << "tile<" << tile.multiplier.toString() << ">";
     }
 
-    void operator()(const Untile& untile) const {
+    void operator()(const Untile& untile) {
         out << "untile<" << untile.multiplier.toString() << ">";
     }
 
-    void operator()(const detail::FusedBinaryOp& binary) const {
+    void operator()(const detail::FusedBinaryOp& binary) {
         switch (binary.op) {
             case BinaryOperator::Plus:
                 out << "+";
@@ -381,15 +381,15 @@ struct PrettyPrinter {
         out << ">";
     }
 
-    void operator()(const Conv2D&) const {
+    void operator()(const Conv2D&) {
         out << "conv2";
     }
 
-    void operator()(const MaxPool2D& maxPool) const {
+    void operator()(const MaxPool2D& maxPool) {
         out << "maxPool2d<" << maxPool.rows << ", " << maxPool.cols << ">";
     }
 
-    void operator()(const MaxPool2DDiff& maxPool) const {
+    void operator()(const MaxPool2DDiff& maxPool) {
         out << "maxPoolDiff2d<" << maxPool.rows << ", " << maxPool.cols << ">";
     }
 
@@ -429,7 +429,16 @@ struct PrettyPrinter {
         out << "halfSumSquares";
     }
 
+    std::string varName(const float* addr) {
+        auto iter = refRegistry.find(addr);
+        if (iter == refRegistry.end()) {
+            iter = refRegistry.emplace(addr, refRegistry.size()).first;
+        }
+        return "x" + std::to_string(iter->second);
+    }
+
     std::ostream& out;
+    std::unordered_map<const float *, size_t> refRegistry;
 };
 
 } // namespace
@@ -450,7 +459,7 @@ const std::vector<TensorValue>& Program::operator()(
 }
 
 std::ostream& operator <<(std::ostream& out, const Program& program) {
-    PrettyPrinter pp{out};
+    PrettyPrinter pp{out, {}};
     for (const auto& s: program.program_) {
         pp(s.result);
         out << " = ";
