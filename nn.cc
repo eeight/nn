@@ -32,7 +32,7 @@ void forEachBatch(const std::vector<Sample>& samples, size_t batchSize, F f) {
                     batchTarget.data() + j * sampleOutputSize);
         }
 
-        f(batchInput, batchTarget);
+        f(batchInput, batchTarget, static_cast<float>(i) / samples.size());
     }
 }
 
@@ -43,7 +43,10 @@ float evaluate(
     forEachBatch(
         samples,
         nn.miniBatchSize(),
-        [&](const TensorValue& batchInput, const TensorValue& batchTarget) {
+        [&](
+                const TensorValue& batchInput,
+                const TensorValue& batchTarget,
+                float) {
             const auto output = nn.predict(batchInput);
             const size_t rows = batchTarget.shape()(0);
             const size_t cols = batchTarget.shape()(1);
@@ -63,9 +66,7 @@ NN::NN(Tensor input, Tensor output, std::vector<Tensor> params) :
     output_(std::move(output)),
     params_(std::move(params)),
     eval_(compile({output}, {input_}))
-{
-    std::cout << "Eval: " << eval_;
-}
+{}
 
 TensorValue NN::predict(const TensorValue& input) const{
     return eval_({&input}).front();
@@ -77,7 +78,8 @@ void NN::fit(
         size_t epochs,
         float eta,
         LossFunction lossFunction,
-        float lambda) {
+        float lambda,
+        FittingListener* listener) {
     auto target = newPlaceholder(output_.shape());
     Tensor regularizer = newTensor(TensorValue{0.0f});
     for (const auto& w: params_) {
@@ -87,21 +89,22 @@ void NN::fit(
         lossFunction(output_, target) / miniBatchSize() +
         lambda / train.size() * regularizer;
     auto dLoss = compile(diff(loss, params_), {input_, target});
-    std::cout << "Loss: " << compile({loss}, {input_, target});
-    std::cout << "dLoss: " << dLoss;
     std::default_random_engine generator;
     for (size_t epoch = 0; epoch != epochs; ++epoch) {
         std::shuffle(train.begin(), train.end(), generator);
         forEachBatch(
             train,
             miniBatchSize(),
-            [&](const TensorValue& batchInput, const TensorValue& batchTarget) {
+            [&](
+                    const TensorValue& batchInput,
+                    const TensorValue& batchTarget,
+                    float progress) {
                 gradientStep(batchInput, batchTarget, dLoss, eta);
+                listener->onBatchDone(progress);
             });
+        listener->onBatchDone(1.0);
         const auto correctRatio = evaluate(*this, test);
-        std::cout << "Epoch done: " << (epoch + 1) <<
-                ", correct: " << correctRatio <<
-                ", n = " << test.size() << '\n';
+        listener->onEpochDone(epoch, correctRatio);
     }
 }
 

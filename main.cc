@@ -1,5 +1,6 @@
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <random>
 
@@ -52,6 +53,51 @@ public:
     std::vector<Tensor> params_;
 };
 
+class Listener : public FittingListener {
+    static constexpr int length = 50;
+
+public:
+    explicit Listener(size_t epochs) : epochs_(epochs)
+    {
+        if (epochs_) {
+            initEpochDisplay(0);
+        }
+    }
+
+    void onEpochDone(size_t epoch, float accuracy) override {
+        std::cout << "] done; accuracy = " << accuracy << '\n';
+        if (epoch + 1 < epochs_) {
+            initEpochDisplay(epoch + 1);
+        }
+    }
+
+    void onBatchDone(float progress) override {
+        const int displayedProgress = length * progress;
+        if (displayedProgress == displayedProgress_) {
+            return;
+        }
+        std::cout << std::string(displayedProgress - displayedProgress_, '=');
+        std::cout << std::flush;
+        displayedProgress_ = displayedProgress;
+    }
+
+private:
+    void initEpochDisplay(size_t epoch) {
+        displayedProgress_ = 0;
+        auto printHeading = [&] {
+            std::cout << "Epoch " << std::setw(4) << epoch  << ": [";
+        };
+        printHeading();
+        std::cout << std::string(length, ' ');
+        std::cout << "]\r";
+        printHeading();
+        std::cout << std::flush;
+    }
+
+    size_t epochs_;
+    float displayedProgress_;
+};
+
 int main()
 {
     _MM_SET_EXCEPTION_MASK(_MM_GET_EXCEPTION_MASK() & ~_MM_MASK_INVALID);
@@ -60,11 +106,14 @@ int main()
     builder.addFullyConnectedLayer(100);
     builder.addFullyConnectedLayer(10);
     auto nn = builder.build();
+    const size_t epochs = 30;
+    Listener listener(epochs);
     nn.fit(
         mnist::readTrain(),
         mnist::readTest(),
-        30,
+        epochs,
         0.5f,
         &crossEntropyLoss,
-        5.0);
+        5.0,
+        &listener);
 }

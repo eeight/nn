@@ -9,6 +9,14 @@
 
 using LossFunction = Tensor (*)(const Tensor&, const Tensor&);
 
+class FittingListener {
+public:
+    virtual ~FittingListener() = default;
+
+    virtual void onEpochDone(size_t epoch, float accuracy) = 0;
+    virtual void onBatchDone(float progress) = 0;
+};
+
 class NN {
 public:
     NN(Tensor input, Tensor output, std::vector<Tensor> paras);
@@ -21,7 +29,8 @@ public:
             size_t epochs,
             float eta,
             LossFunction lossFunction,
-            float lambda);
+            float lambda,
+            FittingListener* listener);
 
     Shape inputShape() const { return input_.shape().dropFirstDim(); }
     Shape outputShape() const { return output_.shape().dropFirstDim(); }
